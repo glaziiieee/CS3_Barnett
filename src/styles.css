@@ -1,0 +1,134 @@
+@import "tailwindcss";
+
+:root {
+  --scrollbar-track-bg: #fff0f6;
+  --scrollbar-thumb-bg: linear-gradient(
+    to bottom,
+    #ffd6e7,
+    #ffb3d9
+  );
+}
+
+body {
+  @apply m-0;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu",
+    "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: #333333; /* global dark gray text */
+  background-color: #ffffff; /* global page background (keep boxes/sidebar colors intact) */
+}
+
+code {
+  font-family:
+    source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
+}
+
+@theme {
+  /* Baby-pink & white theme */
+  --color-primary: #fff5fb;   /* very light baby-pink as primary background */
+  --color-secondary: #ffd6eb; /* soft baby-pink accent */
+  --color-highlights: #ffd6eb; /* pastel pink highlights and borders */
+}
+
+.text-stroke {
+  -webkit-text-stroke: 0.5px;
+  -webkit-text-stroke-color: var(--color-highlights);
+}
+
+/* Override utility class .text-white so existing components using it render dark gray */
+.text-white {
+  color: #333333 !important;
+}
+
+/* Force all Tailwind text utility classes to dark gray for a global override.
+   This matches class names starting with text- and also specific color classes. */
+[class^="text-"] {
+  color: #333333 !important;
+}
+
+/* Specific overrides for color utility classes that may be used directly */
+.text-gray-300, .text-gray-400, .text-gray-600, .text-gray-700, .text-gray-900,
+.text-red-400, .text-green-400, .text-highlights, .text-highlights\/:\d+ {
+  color: #333333 !important;
+}
+
+/* Replace vibrant utility colors with pastel equivalents */
+.text-red-400 { color: #ffc1c1 !important; } /* pastel red/pink */
+.text-green-400 { color: #c7efd6 !important; } /* pastel green */
+.text-yellow-400 { color: #fff3bf !important; } /* pastel yellow */
+.bg-green-600\/20 { background-color: rgba(199, 239, 214, 0.2) !important; }
+.border-green-600 { border-color: #c7efd6 !important; }
+.bg-highlights { background-color: var(--color-highlights) !important; }
+.text-highlights { color: var(--color-highlights) !important; }
+.border-highlights { border-color: var(--color-highlights) !important; }
+
+/* Force every piece of text (all elements, pseudo-elements, form controls) to dark gray */
+*, *::before, *::after, ::placeholder, :-ms-input-placeholder, ::-ms-input-placeholder {
+  color: #333333 !important;
+}
+
+/* Form controls specifically */
+input, textarea, select, option, button {
+  color: #333333 !important;
+}
+
+/* Ensure SVG text (if any) also inherits */
+svg text {
+  fill: #333333 !important;
+  color: #333333 !important;
+}
+
+/* Scoped exception: inside .nav-hotpink keep icons and labels white for contrast */
+.nav-hotpink, .nav-hotpink * {
+  color: #ffffff !important;
+}
+.nav-hotpink svg, .nav-hotpink svg * {
+  fill: #ffffff !important;
+}
+
+/* Accent button matching sidebar color */
+.btn-accent {
+  background-color: #E5748F !important;
+  color: #ffffff !important;
+}
+.btn-accent:hover {
+  background-color: #d95f78 !important; /* slightly darker on hover */
+}
+
+/* Tooltip/Chart popups should display white text on dark backgrounds.
+   These selectors target Recharts, Nivo and custom tooltip wrappers and
+   override the universal dark-gray text rule for those containers. */
+.recharts-default-tooltip,
+.recharts-tooltip-wrapper,
+.chart-tooltip,
+.tooltip,
+.rv-tooltip,
+.recharts-tooltip-wrapper *,
+.chart-tooltip *,
+.tooltip * {
+  color: #ffffff !important;
+  fill: #ffffff !important;
+}
+
+/* Some components use the bg-gray-800 class for dark tooltip backgrounds.
+   Ensure those containers keep white text for readability */
+.bg-gray-800, .bg-gray-800 * {
+  color: #ffffff !important;
+}
+
+/* Scrollbar styles */
+::-webkit-scrollbar {
+  width: 15px;
+}
+
+::-webkit-scrollbar-track {
+  background-color: var(--scrollbar-track-bg);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb-bg);
+  border-radius: 10px;
+}
