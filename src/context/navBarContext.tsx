@@ -1,8 +1,9 @@
-import { createContext, useContext } from "react";
+import { createContext, useContext, useState } from "react";
 import type { ReactNode } from "react";
 
 interface NavBarContextType {
-  // Simplified context - no hover state needed for topbar
+  isCollapsed: boolean;
+  setIsCollapsed: (collapsed: boolean) => void;
 }
 
 const NavBarContext = createContext<NavBarContextType | undefined>(undefined);
@@ -16,7 +17,12 @@ export const useNavBar = () => {
 };
 
 export const NavBarProvider = ({ children }: { children: ReactNode }) => {
-  const value = {};
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  const value = {
+    isCollapsed,
+    setIsCollapsed,
+  };
 
   return (
     <NavBarContext.Provider value={value}>{children}</NavBarContext.Provider>

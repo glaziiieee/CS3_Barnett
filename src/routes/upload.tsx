@@ -403,6 +403,29 @@ function UploadPage() {
     fileInputRef.current?.click();
   };
 
+  const addCivilStatus2020 = async () => {
+    setError("");
+    setSuccess("");
+    try {
+      const payload = {
+        Year: 2020,
+        SINGLE: 1000000,
+        MARRIED: 1200000,
+        DIVORCED: 200000,
+        WIDOWED: 100000,
+      } as const;
+      await setDoc(
+        doc(db, "emigrantData_civilStatus", String(payload.Year)),
+        payload,
+        { merge: true }
+      );
+      setSuccess("Added civilStatus 2020 document successfully.");
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      setError(`Failed to add civilStatus 2020: ${message}`);
+    }
+  };
+
   return (
     <div className="p-6 bg-primary min-h-screen">
       <div className="max-w-4xl mx-auto">
@@ -454,6 +477,15 @@ function UploadPage() {
               >
                 {uploading ? "Uploading..." : "Choose Files"}
               </button>
+
+              <div className="mt-4 flex flex-col gap-2">
+                <button
+                  onClick={addCivilStatus2020}
+                  className="btn-accent px-4 py-2 rounded transition-colors"
+                >
+                  Add Civil Status 2020 (manual)
+                </button>
+              </div>
 
               {uploading && uploadProgress.total > 0 && (
                 <div className="mt-4 w-full max-w-md">

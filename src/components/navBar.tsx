@@ -126,9 +126,9 @@ const NavBar = forwardRef<HTMLElement>((_props, ref) => {
             {navigationItems.map((item) => {
               const active = isActive(item.path);
               return (
-                <Link
-                  key={item.name}
-                  to={item.path}
+            <Link
+              key={item.name}
+              to={item.path}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 mb-1 group ${
                     active
                       ? "bg-pink-100 text-gray-800"
@@ -137,12 +137,12 @@ const NavBar = forwardRef<HTMLElement>((_props, ref) => {
                   title={isCollapsed ? item.name : undefined}
                 >
                   <span className={active ? "text-gray-800" : "text-gray-600"}>
-                    {item.icon}
+              {item.icon}
                   </span>
                   {!isCollapsed && (
                     <span className="text-sm font-medium">{item.name}</span>
                   )}
-                </Link>
+            </Link>
               );
             })}
 
@@ -174,9 +174,9 @@ const NavBar = forwardRef<HTMLElement>((_props, ref) => {
           {navigationItems.map((item) => {
             const active = isActive(item.path);
             return (
-              <Link
-                key={`mobile-${item.name}`}
-                to={item.path}
+            <Link
+              key={`mobile-${item.name}`}
+              to={item.path}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors whitespace-nowrap ${
                   active
                     ? "bg-pink-100 text-gray-800"
@@ -185,7 +185,7 @@ const NavBar = forwardRef<HTMLElement>((_props, ref) => {
               >
                 <span>{item.icon}</span>
                 <span className="text-sm">{item.name}</span>
-              </Link>
+            </Link>
             );
           })}
         </div>

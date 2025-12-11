@@ -162,16 +162,10 @@ function MLForecast() {
       pairs.reduce((sum, p) => sum + p.actual, 0) / (pairs.length || 1);
     const sst = pairs.reduce((sum, p) => sum + (p.actual - meanActual) ** 2, 0);
     const r2 = sst ? 1 - sse / sst : 0;
-    const accuracyVal =
-      pairs.length && lookback
-        ? Math.max(
-            0,
-            Math.min(
-              100,
-              79.65 + (lookback % 2 === 0 ? 0.02 : 0) // mimic reference table: ~79.65% / 79.67%
-            )
-          )
-        : null;
+    // Calculate accuracy dynamically from MAPE; higher error -> lower accuracy
+    const accuracyVal = pairs.length
+      ? Math.max(0, Math.min(100, 100 - mape))
+      : null;
 
     return {
       trainingLoss,
@@ -195,6 +189,8 @@ function MLForecast() {
     trainSeed,
     neuronsLayer1,
     neuronsLayer2,
+    activation,
+    optimizer,
   ]);
 
   const testingRows = useMemo(() => {
@@ -504,9 +500,6 @@ function MLForecast() {
               Reset
             </button>
           </div>
-          {trainMessage && (
-            <p className="mt-3 text-sm text-gray-700">{trainMessage}</p>
-          )}
           {saveMessage && (
             <p className={`mt-3 text-sm ${
               saveMessage.includes("successfully") 

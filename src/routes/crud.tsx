@@ -163,6 +163,11 @@ function CRUDPage() {
     }
   };
 
+  const openCreateModal = () => {
+    resetForm();
+    setShowCreateModal(true);
+  };
+
   const openEditModal = (row: DataRow) => {
     setSelectedRow(row);
     setFormYear(row.Year);
@@ -275,6 +280,14 @@ function CRUDPage() {
                 ))}
               </select>
             </div>
+
+            <button
+              onClick={openCreateModal}
+              className="hidden flex items-center gap-2 bg-highlights text-white px-6 py-2 rounded-lg hover:bg-highlights/90 transition-colors whitespace-nowrap mt-6 md:mt-0"
+            >
+              <AiOutlinePlus className="text-xl" />
+              Add Record
+            </button>
           </div>
         </div>
 
