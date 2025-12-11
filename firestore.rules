@@ -2,27 +2,43 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow public read access to emigrant data
-    match /emigrantData/{document=**} {
-      allow read: if true;
-      allow write: if true; // Allow writes for CSV upload functionality
+
+    // Emigrant data collections
+    match /emigrantData_destination/{document=**} {
+      allow read, write: if true;
     }
-    
-    // Allow public read access to uploaded CSV files collection
+    match /emigrantData_province/{document=**} {
+      allow read, write: if true;
+    }
+    match /emigrantData_age/{document=**} {
+      allow read, write: if true;
+    }
+    match /emigrantData_sex/{document=**} {
+      allow read, write: if true;
+    }
+    match /emigrantData_civilStatus/{document=**} {
+      allow read, write: if true;
+    }
+    match /emigrantData_education/{document=**} {
+      allow read, write: if true;
+    }
+    match /emigrantData_occupation/{document=**} {
+      allow read, write: if true;
+    }
+
+    // Uploaded CSV metadata
     match /uploadedCSVFiles/{document=**} {
-      allow read: if true;
-      allow write: if true; // Allow writes for CSV upload functionality
+      allow read, write: if true;
     }
-    
-    // Block access to old users collection (no longer needed without auth)
-    match /users/{document=**} {
-      allow read, write: if false;
+
+    // ML Models collection
+    match /mlModels/{document=**} {
+      allow read, write: if true;
     }
-    
-    // Deny everything else by default
+
+    // Deny everything else
     match /{document=**} {
       allow read, write: if false;
     }
   }
 }
-

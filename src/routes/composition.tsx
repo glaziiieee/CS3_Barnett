@@ -1,7 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { ResponsivePie } from "@nivo/pie";
 import { useCompositionData } from "../hooks/useCompositionData";
+
+// Pastel color scheme: Pink, Light Blue, Lavender, Mint Green, Peach, Soft Blue
+const donutColorScheme = ["#F8BBD0", "#A8D5E2", "#E1BEE7", "#B2DFDB", "#FFCCBC", "#B3E5FC"];
 
 export const Route = createFileRoute("/composition")({
   component: CompositionCharts,
@@ -17,6 +20,28 @@ function CompositionCharts() {
     error,
     years,
   } = useCompositionData(selectedYear);
+
+  // Apply color scheme to all chart data
+  const destinationDataWithColors = useMemo(() => {
+    return destinationData.map((item, index) => ({
+      ...item,
+      color: donutColorScheme[index % donutColorScheme.length],
+    }));
+  }, [destinationData]);
+
+  const ageGroupDataWithColors = useMemo(() => {
+    return ageGroupData.map((item, index) => ({
+      ...item,
+      color: donutColorScheme[index % donutColorScheme.length],
+    }));
+  }, [ageGroupData]);
+
+  const civilStatusDataWithColors = useMemo(() => {
+    return civilStatusData.map((item, index) => ({
+      ...item,
+      color: donutColorScheme[index % donutColorScheme.length],
+    }));
+  }, [civilStatusData]);
 
   if (loading) {
     return (
@@ -83,23 +108,29 @@ function CompositionCharts() {
             </h2>
             <div className="h-80 bg-white rounded-md p-4">
               <ResponsivePie
-                data={destinationData}
+                data={destinationDataWithColors}
                 margin={{ top: 40, right: 80, bottom: 80, left: 80 }}
-                innerRadius={0.5}
-                padAngle={0.7}
-                cornerRadius={3}
+                innerRadius={0.6}
+                padAngle={0.02}
+                cornerRadius={0}
                 activeOuterRadiusOffset={8}
-                borderWidth={1}
-                borderColor={{
-                  from: "color",
-                  modifiers: [["darker", 0.2]],
-                }}
-                arcLinkLabelsSkipAngle={10}
-                arcLinkLabelsTextColor="#333333"
-                arcLinkLabelsThickness={2}
-                arcLinkLabelsColor={{ from: "color" }}
-                arcLabelsSkipAngle={10}
-                arcLabelsTextColor="#333333"
+                borderWidth={2}
+                borderColor="#ffffff"
+                arcLinkLabels={false}
+                arcLabels={false}
+                enableArcLabels={false}
+                enableArcLinkLabels={false}
+                isInteractive={true}
+                tooltip={({ datum }) => (
+                  <div style={{
+                    background: 'white',
+                    padding: '8px 12px',
+                    border: '1px solid #ccc',
+                    borderRadius: '4px',
+                  }}>
+                    <strong>{datum.label}</strong>: {datum.value.toLocaleString()}
+                  </div>
+                )}
                 legends={[
                   {
                     anchor: "bottom",
@@ -136,23 +167,29 @@ function CompositionCharts() {
             </h2>
             <div className="h-80 bg-white rounded-md p-4">
               <ResponsivePie
-                data={ageGroupData}
+                data={ageGroupDataWithColors}
                 margin={{ top: 40, right: 80, bottom: 80, left: 80 }}
-                innerRadius={0.5}
-                padAngle={0.7}
-                cornerRadius={3}
+                innerRadius={0.6}
+                padAngle={0.02}
+                cornerRadius={0}
                 activeOuterRadiusOffset={8}
-                borderWidth={1}
-                borderColor={{
-                  from: "color",
-                  modifiers: [["darker", 0.2]],
-                }}
-                arcLinkLabelsSkipAngle={10}
-                arcLinkLabelsTextColor="#333333"
-                arcLinkLabelsThickness={2}
-                arcLinkLabelsColor={{ from: "color" }}
-                arcLabelsSkipAngle={10}
-                arcLabelsTextColor="#333333"
+                borderWidth={2}
+                borderColor="#ffffff"
+                arcLinkLabels={false}
+                arcLabels={false}
+                enableArcLabels={false}
+                enableArcLinkLabels={false}
+                isInteractive={true}
+                tooltip={({ datum }) => (
+                  <div style={{
+                    background: 'white',
+                    padding: '8px 12px',
+                    border: '1px solid #ccc',
+                    borderRadius: '4px',
+                  }}>
+                    <strong>{datum.label}</strong>: {datum.value.toLocaleString()}
+                  </div>
+                )}
                 legends={[
                   {
                     anchor: "bottom",
@@ -189,23 +226,29 @@ function CompositionCharts() {
             </h2>
             <div className="h-80 bg-white rounded-md p-4">
               <ResponsivePie
-                data={civilStatusData}
+                data={civilStatusDataWithColors}
                 margin={{ top: 40, right: 80, bottom: 80, left: 80 }}
-                innerRadius={0.5}
-                padAngle={0.7}
-                cornerRadius={3}
+                innerRadius={0.6}
+                padAngle={0.02}
+                cornerRadius={0}
                 activeOuterRadiusOffset={8}
-                borderWidth={1}
-                borderColor={{
-                  from: "color",
-                  modifiers: [["darker", 0.2]],
-                }}
-                arcLinkLabelsSkipAngle={10}
-                arcLinkLabelsTextColor="#333333"
-                arcLinkLabelsThickness={2}
-                arcLinkLabelsColor={{ from: "color" }}
-                arcLabelsSkipAngle={10}
-                arcLabelsTextColor="#333333"
+                borderWidth={2}
+                borderColor="#ffffff"
+                arcLinkLabels={false}
+                arcLabels={false}
+                enableArcLabels={false}
+                enableArcLinkLabels={false}
+                isInteractive={true}
+                tooltip={({ datum }) => (
+                  <div style={{
+                    background: 'white',
+                    padding: '8px 12px',
+                    border: '1px solid #ccc',
+                    borderRadius: '4px',
+                  }}>
+                    <strong>{datum.label}</strong>: {datum.value.toLocaleString()}
+                  </div>
+                )}
                 legends={[
                   {
                     anchor: "bottom",

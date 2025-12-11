@@ -11,6 +11,8 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { db } from "../firebase";
 
 type Activation = "ReLU" | "Tanh" | "Sigmoid";
 
@@ -96,6 +98,8 @@ function MLForecast() {
   const [trainSeed, setTrainSeed] = useState(0);
   const [hasTrained, setHasTrained] = useState(false);
   const [hasGenerated, setHasGenerated] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
   const horizonYears = useMemo(() => {
     const match = horizon.match(/\d+/);
@@ -248,6 +252,72 @@ function MLForecast() {
     setTrainMessage(null);
     setHasTrained(false);
     setHasGenerated(false);
+    setSaveMessage(null);
+  };
+
+  const handleSaveModel = async () => {
+    if (!hasGenerated) {
+      setSaveMessage("Please generate a forecast before saving the model.");
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveMessage("Saving model to Firebase...");
+
+    try {
+      const modelData = {
+        // Configuration
+        dataType,
+        country,
+        horizon,
+        horizonYears,
+        lookback,
+        neuronsLayer1,
+        neuronsLayer2,
+        activation,
+        optimizer,
+        
+        // Metrics
+        mae: metrics.mae,
+        rmse: metrics.rmse,
+        mape: metrics.mape,
+        r2: metrics.r2,
+        accuracy: metrics.accuracy,
+        trainingLoss: metrics.trainingLoss,
+        validationLoss: metrics.validationLoss,
+        cagr: metrics.cagr,
+        dataPoints: metrics.dataPoints,
+        
+        // Forecast data
+        forecastPoints: forecastPoints.map(p => ({
+          year: p.year,
+          forecast: p.forecast,
+        })),
+        
+        // Historical data
+        historicalData: historical.map(h => ({
+          year: h.year,
+          historical: h.historical,
+        })),
+        
+        // Testing results
+        testingResults: testingRows,
+        
+        // Metadata
+        trainSeed,
+        savedAt: serverTimestamp(),
+      };
+
+      await addDoc(collection(db, "mlModels"), modelData);
+      setSaveMessage("Model successfully saved to Firebase!");
+      setTimeout(() => setSaveMessage(null), 3000);
+    } catch (error) {
+      console.error("Error saving model to Firebase:", error);
+      setSaveMessage("Failed to save model. Please try again.");
+      setTimeout(() => setSaveMessage(null), 3000);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -416,6 +486,18 @@ function MLForecast() {
             </button>
             <button
               type="button"
+              onClick={handleSaveModel}
+              disabled={isSaving || !hasGenerated}
+              className={`bg-purple-600 text-white px-4 py-2 rounded-md shadow transition ${
+                isSaving || !hasGenerated
+                  ? "opacity-60 cursor-not-allowed"
+                  : "hover:opacity-90"
+              }`}
+            >
+              {isSaving ? "Saving..." : "Save Model to Firebase"}
+            </button>
+            <button
+              type="button"
               onClick={handleReset}
               className="bg-red-600 text-white px-4 py-2 rounded-md shadow hover:opacity-90 transition"
             >
@@ -424,6 +506,17 @@ function MLForecast() {
           </div>
           {trainMessage && (
             <p className="mt-3 text-sm text-gray-700">{trainMessage}</p>
+          )}
+          {saveMessage && (
+            <p className={`mt-3 text-sm ${
+              saveMessage.includes("successfully") 
+                ? "text-green-400" 
+                : saveMessage.includes("Failed")
+                ? "text-red-400"
+                : "text-gray-700"
+            }`}>
+              {saveMessage}
+            </p>
           )}
         </div>
 

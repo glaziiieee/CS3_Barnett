@@ -53,6 +53,7 @@ function CRUDPage() {
   // Form states
   const [formYear, setFormYear] = useState<number>(new Date().getFullYear());
   const [formData, setFormData] = useState<Record<string, number>>({});
+  const [showFieldDropdown, setShowFieldDropdown] = useState(false);
 
   const collections: { value: DataCollection; label: string }[] = [
     { value: "emigrantData_destination", label: "Destination Countries" },
@@ -162,11 +163,6 @@ function CRUDPage() {
     }
   };
 
-  const openCreateModal = () => {
-    resetForm();
-    setShowCreateModal(true);
-  };
-
   const openEditModal = (row: DataRow) => {
     setSelectedRow(row);
     setFormYear(row.Year);
@@ -192,6 +188,7 @@ function CRUDPage() {
     setFormYear(new Date().getFullYear());
     setFormData({});
     setSelectedRow(null);
+    setShowFieldDropdown(false);
   };
 
   const addCategory = () => {
@@ -200,6 +197,21 @@ function CRUDPage() {
       setFormData({ ...formData, [categoryName.trim().toUpperCase()]: 0 });
     }
   };
+
+  const addCategoryFromList = (categoryName: string) => {
+    if (categoryName && !formData[categoryName]) {
+      setFormData({ ...formData, [categoryName]: 0 });
+      setShowFieldDropdown(false);
+    }
+  };
+
+  const availableCategories = categories.filter(
+    (cat) => !formData[cat]
+  );
+
+  const availableCollections = collections.filter(
+    (col) => col.value !== selectedCollection
+  );
 
   const updateCategory = (key: string, value: string) => {
     const numValue = parseFloat(value);
@@ -222,16 +234,16 @@ function CRUDPage() {
           <h1 className="text-4xl font-bold text-white mb-2">
             Data Management (CRUD)
           </h1>
-          <p className="text-gray-300 text-lg">
+          <p className="text-gray-700 text-lg">
             Create, Read, Update, and Delete emigrant data records
           </p>
         </div>
 
         {/* Status Messages */}
         {error && (
-          <div className="bg-red-600/20 border border-red-600 rounded-lg p-4 mb-6 flex items-center gap-3">
-            <AiOutlineWarning className="text-red-400 text-2xl flex-shrink-0" />
-            <p className="text-red-400">{error}</p>
+          <div className="bg-pink-100 border border-red-600 rounded-lg p-4 mb-6 flex items-center gap-3">
+            <AiOutlineWarning className="text-white text-2xl flex-shrink-0" />
+            <p className="text-white">{error}</p>
           </div>
         )}
 
@@ -246,7 +258,7 @@ function CRUDPage() {
         <div className="bg-secondary rounded-lg p-6 border border-gray-700 mb-6">
           <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
             <div className="flex-1 w-full md:w-auto">
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Select Data Collection
               </label>
               <select
@@ -263,14 +275,6 @@ function CRUDPage() {
                 ))}
               </select>
             </div>
-
-            <button
-              onClick={openCreateModal}
-              className="flex items-center gap-2 bg-highlights text-white px-6 py-2 rounded-lg hover:bg-highlights/90 transition-colors whitespace-nowrap"
-            >
-              <AiOutlinePlus className="text-xl" />
-              Create New Record
-            </button>
           </div>
         </div>
 
@@ -278,13 +282,13 @@ function CRUDPage() {
         <div className="bg-secondary rounded-lg border border-gray-700 overflow-hidden">
           <div className="overflow-x-auto">
             {loading ? (
-              <div className="p-12 text-center text-gray-400">
+              <div className="p-12 text-center text-gray-700">
                 Loading data...
               </div>
             ) : data.length === 0 ? (
               <div className="p-12 text-center">
                 <AiOutlineTable className="text-6xl text-gray-600 mx-auto mb-4" />
-                <p className="text-gray-400 text-lg mb-2">No data available</p>
+                <p className="text-gray-700 text-lg mb-2">No data available</p>
                 <p className="text-gray-500 text-sm">
                   Create a new record to get started
                 </p>
@@ -333,7 +337,7 @@ function CRUDPage() {
                         return (
                           <td
                             key={cat}
-                            className="px-6 py-4 text-gray-300 border-b border-gray-700/50"
+                            className="px-6 py-4 text-gray-700 border-b border-gray-700/50"
                           >
                             {typeof value === "number"
                               ? value.toLocaleString()
@@ -342,7 +346,7 @@ function CRUDPage() {
                         );
                       })}
                       {categories.length > 5 && (
-                        <td className="px-6 py-4 text-gray-400 italic border-b border-gray-700/50">
+                        <td className="px-6 py-4 text-gray-700 italic border-b border-gray-700/50">
                           {categories.length - 5} more fields
                         </td>
                       )}
@@ -374,7 +378,7 @@ function CRUDPage() {
 
         {/* Data Count */}
         {data.length > 0 && (
-          <div className="mt-4 text-gray-400 text-sm">
+          <div className="mt-4 text-gray-700 text-sm">
             Showing {data.length} record{data.length !== 1 ? "s" : ""}
           </div>
         )}
@@ -388,7 +392,7 @@ function CRUDPage() {
         >
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Year *
               </label>
               <input
@@ -404,27 +408,84 @@ function CRUDPage() {
 
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label className="block text-sm font-medium text-gray-300">
+                <label className="block text-sm font-medium text-gray-700">
                   Data Fields
                 </label>
-                <button
-                  onClick={addCategory}
-                  className="text-highlights hover:text-highlights/80 text-sm flex items-center gap-1"
-                >
-                  <AiOutlinePlus /> Add Field
-                </button>
+                <div className="relative field-dropdown-container">
+                  <button
+                    onClick={() => setShowFieldDropdown(!showFieldDropdown)}
+                    className="text-highlights hover:text-highlights/80 text-sm flex items-center gap-1 px-3 py-1.5 border border-highlights rounded-lg"
+                  >
+                    <AiOutlinePlus /> Select Field
+                  </button>
+                  {showFieldDropdown && (
+                    <div className="absolute right-0 mt-2 bg-pink-50 border border-gray-300 rounded-lg shadow-lg z-10 min-w-[200px] max-h-64 overflow-y-auto">
+                      <div className="bg-blue-600 px-4 py-2">
+                        <p className="text-white font-bold text-sm">
+                          Select Data Collection
+                        </p>
+                      </div>
+                      <div className="py-1 bg-white">
+                        {collections.map((col) => (
+                          <button
+                            key={col.value}
+                            onClick={() => {
+                              setSelectedCollection(col.value);
+                              setShowFieldDropdown(false);
+                            }}
+                            className={`w-full text-left px-4 py-2 text-sm transition-colors ${
+                              col.value === selectedCollection
+                                ? "bg-blue-600 text-white"
+                                : "text-gray-800 hover:bg-blue-600 hover:text-white"
+                            }`}
+                          >
+                            {col.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {showFieldDropdown && availableCategories.length === 0 && (
+                    <div className="absolute right-0 mt-2 bg-pink-50 border border-gray-300 rounded-lg shadow-lg z-10 min-w-[200px]">
+                      <div className="bg-blue-600 px-4 py-2">
+                        <p className="text-white font-bold text-sm">No Available Fields</p>
+                      </div>
+                      <div className="px-4 py-2 text-sm text-gray-700">
+                        All fields have been added
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="space-y-2 max-h-96 overflow-y-auto">
                 {Object.keys(formData).length === 0 ? (
-                  <div className="text-center py-8 text-gray-400">
-                    <p className="mb-2">No fields added yet</p>
-                    <button
-                      onClick={addCategory}
-                      className="text-highlights hover:underline"
-                    >
-                      Click to add a field
-                    </button>
+                  <div>
+                    <div className="bg-pink-50 border border-gray-300 rounded-lg overflow-hidden">
+                      <div className="bg-blue-600 px-4 py-2">
+                        <p className="text-white font-bold text-sm">
+                          Select Data Collection
+                        </p>
+                      </div>
+                      <div className="py-1 bg-white">
+                        {collections.map((col) => (
+                          <button
+                            key={col.value}
+                            onClick={() => {
+                              setSelectedCollection(col.value);
+                              setShowFieldDropdown(false);
+                            }}
+                            className={`w-full text-left px-4 py-2 text-sm transition-colors ${
+                              col.value === selectedCollection
+                                ? "bg-blue-600 text-white"
+                                : "text-gray-800 hover:bg-blue-600 hover:text-white"
+                            }`}
+                          >
+                            {col.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 ) : (
                   Object.entries(formData).map(([key, value]) => (
@@ -439,14 +500,14 @@ function CRUDPage() {
                         type="number"
                         value={value}
                         onChange={(e) => updateCategory(key, e.target.value)}
-                        className="w-32 bg-primary text-white border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-highlights"
-                        placeholder="Value"
+                        className="w-20 bg-green-950 text-white text-center px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-green-600"
+                        placeholder="0"
                       />
                       <button
                         onClick={() => removeCategory(key)}
-                        className="p-2 bg-red-600 hover:bg-red-500 text-white rounded-lg"
+                        className="p-2.5 bg-red-600 hover:bg-red-500 text-white transition-colors"
                       >
-                        <AiOutlineClose />
+                        <AiOutlineClose className="text-sm" />
                       </button>
                     </div>
                   ))
@@ -480,14 +541,14 @@ function CRUDPage() {
         >
           <div className="space-y-4">
             <div className="bg-primary/50 border border-gray-700 rounded-lg p-3">
-              <p className="text-sm text-gray-400">
+              <p className="text-sm text-gray-700">
                 Year: <span className="text-white font-semibold">{formYear}</span>
               </p>
             </div>
 
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label className="block text-sm font-medium text-gray-300">
+                <label className="block text-sm font-medium text-gray-700">
                   Update Data Fields
                 </label>
                 <button
@@ -557,7 +618,7 @@ function CRUDPage() {
                   Are you sure you want to delete the record for year{" "}
                   <span className="font-bold">{selectedRow.Year}</span>?
                 </p>
-                <p className="text-gray-400 text-sm">
+                <p className="text-gray-700 text-sm">
                   This action cannot be undone. All data for this year will be
                   permanently removed.
                 </p>
@@ -602,7 +663,7 @@ function Modal({
           <h2 className="text-2xl font-bold text-white">{title}</h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors"
+            className="text-gray-700 hover:text-white transition-colors"
           >
             <AiOutlineClose className="text-2xl" />
           </button>
