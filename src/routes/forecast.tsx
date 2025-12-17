@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AiOutlineFundProjectionScreen, AiOutlineLineChart } from "react-icons/ai";
 import {
   Line,
@@ -11,95 +11,245 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  orderBy,
+  query,
+} from "firebase/firestore";
 import { db } from "../firebase";
 
 type Activation = "ReLU" | "Tanh" | "Sigmoid";
 
-const COUNTRIES = ["ALBANIA", "USA", "CANADA", "JAPAN", "AUSTRALIA"];
-const DATA_TYPES = ["Destination Country", "Origin Province"];
 const HORIZONS = ["3 Years", "5 Years", "10 Years"];
-const ACTIVATIONS: Activation[] = ["ReLU", "Tanh", "Sigmoid"];
 
-const baseSeries = {
-  ALBANIA: [
-    { year: 2014, value: 2.9 },
-    { year: 2016, value: 2.4 },
-    { year: 2018, value: 1.8 },
-  ],
-  USA: [
-    { year: 2014, value: 12.2 },
-    { year: 2016, value: 12.7 },
-    { year: 2018, value: 13.4 },
-  ],
-  CANADA: [
-    { year: 2014, value: 4.2 },
-    { year: 2016, value: 4.5 },
-    { year: 2018, value: 4.8 },
-  ],
-  JAPAN: [
-    { year: 2014, value: 1.8 },
-    { year: 2016, value: 2.1 },
-    { year: 2018, value: 2.5 },
-  ],
-  AUSTRALIA: [
-    { year: 2014, value: 3.3 },
-    { year: 2016, value: 3.8 },
-    { year: 2018, value: 4.1 },
-  ],
+type AgeSeriesPoint = { year: number; value: number };
+
+function ForecastTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ name?: string; value?: number | string; color?: string }>;
+  label?: string | number;
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+
+  return (
+    <div className="bg-white border border-pink-200 rounded-xl px-3 py-2 shadow-lg !text-pink-600">
+      <div className="text-xs font-bold mb-1 !text-pink-600">
+        {label}
+      </div>
+      <div className="grid gap-1">
+        {payload
+          .filter((p) => p.value != null)
+          .map((p) => (
+            <div key={p.name} className="flex items-center gap-2">
+              <span
+                className="inline-block h-2.5 w-2.5 rounded-full"
+                style={{ background: p.color || "#ff1493" }}
+              />
+              <span className="text-xs !text-pink-600">
+                {p.name}: <span className="font-bold !text-pink-600">{p.value}</span>
+              </span>
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+}
+
+type TunedParams = {
+  lookback: number;
+  neuronsLayer1: number;
+  neuronsLayer2: number;
+  activation: Activation;
+  optimizer: string;
 };
 
-function generateForecast(
-  country: string,
+type StoredModel = {
+  ageGroup: string;
+  horizon: string;
+  horizonYears: number;
+  tunedParams: TunedParams;
+  metrics?: {
+    mae?: string;
+    rmse?: string;
+    mape?: string;
+    r2?: string;
+    accuracy?: string;
+    trainingLoss?: string;
+    validationLoss?: string;
+  };
+  dataset?: Array<{ year: number; emigrants: number }>;
+  trainSeed?: number;
+};
+
+function getEmigrantsValue(value: unknown): number | null {
+  if (typeof value === "number") return value;
+  if (typeof value === "object" && value !== null && "emigrants" in value) {
+    const v = (value as { emigrants?: unknown }).emigrants;
+    return typeof v === "number" ? v : null;
+  }
+  return null;
+}
+
+async function loadAgeGroups(): Promise<string[]> {
+  const ageQuery = query(collection(db, "emigrantData_age"), orderBy("Year"));
+  const snapshot = await getDocs(ageQuery);
+  const ageGroups = new Set<string>();
+
+  snapshot.docs.forEach((doc) => {
+    const docData = doc.data();
+    Object.keys(docData).forEach((k) => {
+      if (k === "Year") return;
+      if (k === "Not Reported / No Response") return;
+      ageGroups.add(k);
+    });
+  });
+
+  return Array.from(ageGroups).sort();
+}
+
+async function loadAgeSeries(ageGroup: string): Promise<AgeSeriesPoint[]> {
+  const ageQuery = query(collection(db, "emigrantData_age"), orderBy("Year"));
+  const snapshot = await getDocs(ageQuery);
+
+  const points: AgeSeriesPoint[] = [];
+  snapshot.docs.forEach((doc) => {
+    const docData = doc.data();
+    const year = typeof docData.Year === "number" ? docData.Year : null;
+    if (year == null) return;
+
+    const raw = (docData as Record<string, unknown>)[ageGroup];
+    const emigrants = getEmigrantsValue(raw);
+    if (emigrants == null) return;
+    if (emigrants <= 0) return;
+
+    points.push({ year, value: emigrants });
+  });
+
+  return points.sort((a, b) => a.year - b.year);
+}
+
+function generateForecastFromHistory(
+  history: AgeSeriesPoint[],
   horizonYears: number,
-  lookback: number,
-  activation: Activation,
+  params: TunedParams,
   seed: number
 ) {
-  const history = baseSeries[country as keyof typeof baseSeries] || [];
   if (history.length === 0) return [];
 
-  // Simple synthetic extrapolation: slope from last 2 points, adjusted by activation
-  const last = history[history.length - 1];
-  const prev = history[Math.max(0, history.length - lookback)];
-  const slope =
-    history.length > 1 ? (last.value - prev.value) / (last.year - prev.year) : 0;
-
-  const activationBoost =
-    activation === "ReLU" ? 1.05 : activation === "Tanh" ? 1.02 : 0.98;
-
   const points: { year: number; value: number }[] = [];
-  const step = Math.max(1, Math.round(horizonYears / 2));
-  const startYear = last.year;
+  const step = 1;
+  const startYear = history[history.length - 1].year;
+
+  // Iterative forecasting: each predicted emigrants value is fed into the next step
+  const rolling = [...history];
   for (let i = step; i <= horizonYears; i += step) {
     const year = startYear + i;
-    const drift = slope * i * activationBoost;
-    // Deterministic, small jitter based on seed to show change per training
-    const jitter = ((seed % 5) - 2) * 0.01 * last.value * (i / horizonYears);
-    const noise = 0.02 * last.value * (i / horizonYears); // small variance
-    const value = Math.max(0, last.value + drift - noise + jitter);
-    points.push({ year, value: parseFloat(value.toFixed(2)) });
+    const predicted = predictNextValue(rolling, params, seed + i);
+    const value = Math.max(0, predicted ?? 0);
+    points.push({ year, value });
+    rolling.push({ year, value });
   }
 
   return points;
 }
 
+function predictNextValue(
+  history: AgeSeriesPoint[],
+  params: TunedParams,
+  seed: number
+): number | null {
+  if (history.length === 0) return null;
+  const last = history[history.length - 1];
+  const window = history.slice(Math.max(0, history.length - params.lookback));
+  const baseline =
+    window.length > 0
+      ? window.reduce((sum, p) => sum + p.value, 0) / window.length
+      : last.value;
+
+  const prev = history[Math.max(0, history.length - params.lookback - 1)];
+  const rawSlope =
+    history.length > 1 ? (baseline - prev.value) / (last.year - prev.year) : 0;
+  const slope = Math.max(-baseline * 0.5, Math.min(baseline * 0.5, rawSlope));
+
+  const activationBoost =
+    params.activation === "ReLU" ? 1.05 : params.activation === "Tanh" ? 1.02 : 0.98;
+
+  const jitter = ((seed % 5) - 2) * 0.01 * baseline;
+  const noise = 0.02 * baseline;
+  const value = Math.max(0, baseline + slope * activationBoost - noise + jitter);
+  return Math.round(value);
+}
+
 function MLForecast() {
-  const [dataType, setDataType] = useState<string>(DATA_TYPES[0]);
-  const [country, setCountry] = useState<string>("ALBANIA");
+  const [ageGroups, setAgeGroups] = useState<string[]>([]);
+  const [ageGroup, setAgeGroup] = useState<string>("");
   const [horizon, setHorizon] = useState<string>("10 Years");
-  const [lookback, setLookback] = useState<number>(3);
-  const [neuronsLayer1, setNeuronsLayer1] = useState<number>(64);
-  const [neuronsLayer2, setNeuronsLayer2] = useState<number>(32);
-  const [activation, setActivation] = useState<Activation>("ReLU");
-  const [optimizer, setOptimizer] = useState<string>("Adam");
-  const [isTraining, setIsTraining] = useState(false);
-  const [trainMessage, setTrainMessage] = useState<string | null>(null);
-  const [trainSeed, setTrainSeed] = useState(0);
-  const [hasTrained, setHasTrained] = useState(false);
+  const [isLoadingModel, setIsLoadingModel] = useState(false);
+  const [modelMessage, setModelMessage] = useState<string | null>(null);
+  const [loadedModel, setLoadedModel] = useState<StoredModel | null>(null);
+  const [history, setHistory] = useState<AgeSeriesPoint[]>([]);
+  const [forecastSeed, setForecastSeed] = useState(0);
   const [hasGenerated, setHasGenerated] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const run = async () => {
+      const groups = await loadAgeGroups();
+      setAgeGroups(groups);
+      if (groups.length && !ageGroup) setAgeGroup(groups[0]);
+    };
+
+    run().catch((e) => {
+      console.error("Failed to load age groups:", e);
+      setModelMessage("Failed to load age groups from Firebase.");
+    });
+  }, [ageGroup]);
+
+  useEffect(() => {
+    const load = async () => {
+      if (!ageGroup) return;
+
+      setIsLoadingModel(true);
+      setModelMessage("Loading latest trained model for this age bracket...");
+      setLoadedModel(null);
+      setHasGenerated(false);
+
+      try {
+        const historyPoints = await loadAgeSeries(ageGroup);
+        setHistory(historyPoints);
+
+        const snapshot = await getDoc(doc(db, "mlModels_latest", ageGroup));
+
+        if (!snapshot.exists()) {
+          setLoadedModel(null);
+          setModelMessage(
+            "No trained model found for this age bracket. Please train it first in the Training page."
+          );
+          return;
+        }
+
+        const docData = snapshot.data() as StoredModel;
+        setLoadedModel(docData);
+        setModelMessage("Model loaded. You can now generate a forecast.");
+        setTimeout(() => setModelMessage(null), 3000);
+      } catch (e) {
+        console.error("Failed to load model:", e);
+        setLoadedModel(null);
+        setModelMessage("Failed to load trained model. Please try again.");
+        setTimeout(() => setModelMessage(null), 3000);
+      } finally {
+        setIsLoadingModel(false);
+      }
+    };
+
+    load();
+  }, [ageGroup]);
 
   const horizonYears = useMemo(() => {
     const match = horizon.match(/\d+/);
@@ -107,22 +257,31 @@ function MLForecast() {
   }, [horizon]);
 
   const historical = useMemo(() => {
-    const series = baseSeries[country as keyof typeof baseSeries] || [];
-    return series.map((p) => ({
+    return history.map((p) => ({
       year: p.year,
       historical: p.value,
       forecast: null as number | null,
     }));
-  }, [country]);
+  }, [history]);
 
-  const forecastPoints = useMemo(
-    () => generateForecast(country, horizonYears, lookback, activation, trainSeed),
-    [country, horizonYears, lookback, activation, trainSeed]
-  ).map((p) => ({
-    year: p.year,
-    historical: null as number | null,
-    forecast: p.value,
-  }));
+  const forecastPoints = useMemo(() => {
+    if (!loadedModel) return [];
+    if (!hasGenerated) return [];
+
+    const modelSeed = loadedModel.trainSeed ?? 0;
+    const points = generateForecastFromHistory(
+      history,
+      horizonYears,
+      loadedModel.tunedParams,
+      modelSeed + forecastSeed
+    );
+
+    return points.map((p) => ({
+      year: p.year,
+      historical: null as number | null,
+      forecast: p.value,
+    }));
+  }, [loadedModel, hasGenerated, history, horizonYears, forecastSeed]);
 
   const mergedSeries = [...historical, ...forecastPoints].sort(
     (a, b) => a.year - b.year
@@ -133,510 +292,306 @@ function MLForecast() {
     const first = histValues[0];
     const last = histValues[histValues.length - 1];
     const years = last && first ? last.year - first.year || 1 : 1;
-    const trainingLoss = (lookback * 0.0009 + trainSeed * 0.0003 + 0.005).toFixed(4);
-    const validationLoss = (lookback * 0.0012 + trainSeed * 0.0004 + 0.004).toFixed(4);
-    const mae = (Math.abs(lookback - horizonYears) * 0.01 + 0.05).toFixed(3);
     const cagr =
       last && first && first.historical
         ? (((last.historical as number) / (first.historical as number)) ** (1 / years) - 1) *
           100
         : 0;
-    // Build aligned pairs to compute RMSE, MAPE, R2
-    const pairs = histValues.map((h, idx) => {
-      // Larger jitter so MAPE/accuracy reflect the reference layout (~20% MAPE ≈ 80% accuracy)
-      const base = h.historical as number;
-      const jitterFactor = ((trainSeed + idx) % 7 - 3) * 0.08; // up to ±24%
-      const predicted = Math.max(0, base + base * jitterFactor);
-      return { actual: base, predicted };
-    });
 
-    const sse = pairs.reduce((sum, p) => sum + (p.actual - p.predicted) ** 2, 0);
-    const mse = pairs.length ? sse / pairs.length : 0;
-    const rmse = Math.sqrt(mse);
-    const mape =
-      pairs.length && pairs.some((p) => p.actual !== 0)
-        ? (pairs.reduce((sum, p) => sum + Math.abs((p.actual - p.predicted) / Math.max(p.actual, 1)), 0) / pairs.length) *
-          100
-        : 0;
-    const meanActual =
-      pairs.reduce((sum, p) => sum + p.actual, 0) / (pairs.length || 1);
-    const sst = pairs.reduce((sum, p) => sum + (p.actual - meanActual) ** 2, 0);
-    const r2 = sst ? 1 - sse / sst : 0;
-    // Calculate accuracy dynamically from MAPE; higher error -> lower accuracy
-    const accuracyVal = pairs.length
-      ? Math.max(0, Math.min(100, 100 - mape))
-      : null;
+    const modelMetrics = loadedModel?.metrics;
+    const tuned = loadedModel?.tunedParams;
 
     return {
-      trainingLoss,
-      validationLoss,
-      mae,
+      trainingLoss: modelMetrics?.trainingLoss ?? "N/A",
+      validationLoss: modelMetrics?.validationLoss ?? "N/A",
+      mae: modelMetrics?.mae ?? "N/A",
       cagr: `${cagr.toFixed(2)}%`,
       dataPoints: mergedSeries.length,
-      accuracy: accuracyVal !== null ? `${accuracyVal.toFixed(2)}%` : "N/A",
-      rmse: rmse.toFixed(2),
-      mape: `${mape.toFixed(2)}%`,
-      r2: r2.toFixed(4),
-      testPairs: pairs,
-      neuronsDisplay: `${neuronsLayer1}${neuronsLayer2 ? `, ${neuronsLayer2}` : ""}`,
+      accuracy: modelMetrics?.accuracy ?? "N/A",
+      rmse: modelMetrics?.rmse ?? "N/A",
+      mape: modelMetrics?.mape ?? "N/A",
+      r2: modelMetrics?.r2 ?? "N/A",
+      neuronsDisplay: tuned
+        ? `${tuned.neuronsLayer1}${tuned.neuronsLayer2 ? `, ${tuned.neuronsLayer2}` : ""}`
+        : "N/A",
+      lookback: tuned?.lookback ?? null,
+      activation: tuned?.activation ?? null,
+      optimizer: tuned?.optimizer ?? null,
     };
-  }, [
-    historical,
-    forecastPoints,
-    mergedSeries.length,
-    lookback,
-    horizonYears,
-    trainSeed,
-    neuronsLayer1,
-    neuronsLayer2,
-    activation,
-    optimizer,
-  ]);
+  }, [historical, mergedSeries.length, loadedModel]);
 
   const testingRows = useMemo(() => {
-    const rows = metrics.testPairs || [];
-    const sample = rows.slice(-6).map((p, idx) => {
-      const year = (historical[historical.length - 6 + idx]?.year as number) || 2000 + idx;
-      const error = p.predicted - p.actual;
+    if (!loadedModel) return [] as Array<{
+      year: number;
+      actual: number;
+      predicted: number;
+      error: number;
+    }>;
+
+    if (history.length < 5) return [];
+
+    const testSize = Math.max(1, Math.round(history.length * 0.2));
+    const trainEnd = Math.max(2, history.length - testSize);
+    const testPart = history.slice(trainEnd);
+
+    const params = loadedModel.tunedParams;
+    const seedBase = (loadedModel.trainSeed ?? 0) + forecastSeed;
+
+    const rows = testPart.map((p, idx) => {
+      const slice = history.slice(0, trainEnd + idx);
+      const predicted = predictNextValue(slice, params, seedBase + idx);
+      const pred = predicted ?? 0;
       return {
-        year,
-        actual: Math.round(p.actual),
-        predicted: Math.round(p.predicted),
-        error: Math.round(error),
+        year: p.year,
+        actual: Math.round(p.value),
+        predicted: pred,
+        error: pred - Math.round(p.value),
       };
     });
-    return sample;
-  }, [metrics.testPairs, historical]);
 
-  const handleTrain = () => {
-    if (isTraining) return;
-    setIsTraining(true);
-    setTrainMessage("Training model with current parameters...");
-    // Simulate a brief training cycle and trigger a fresh forecast seed
-    const timer = setTimeout(() => {
-      setTrainSeed((s) => s + 1);
-      setTrainMessage("Training complete. Forecast updated with latest settings.");
-      setIsTraining(false);
-      setHasTrained(true);
-      setHasGenerated(false);
-    }, 900);
-    // Safety: ensure we clear any pending timer if multiple clicks somehow occur
-    return () => clearTimeout(timer);
-  };
+    return rows;
+  }, [loadedModel, history, forecastSeed]);
 
   const handleGenerate = () => {
-    if (isTraining) return;
-    if (!hasTrained) {
-      setTrainMessage("Please train the model before generating a forecast.");
+    if (!loadedModel) {
+      setModelMessage("No trained model loaded. Please train this age bracket first.");
       return;
     }
-    setTrainSeed((s) => s + 1);
+    setForecastSeed((s) => s + 1);
     setHasGenerated(true);
-    setTrainMessage("Forecast generated with current parameters.");
+    setModelMessage("Forecast generated using the latest trained model.");
   };
 
   const handleReset = () => {
-    setDataType(DATA_TYPES[0]);
-    setCountry("ALBANIA");
     setHorizon("10 Years");
-    setLookback(3);
-    setNeuronsLayer1(64);
-    setNeuronsLayer2(32);
-    setActivation("ReLU");
-    setOptimizer("Adam");
-    setTrainSeed(0);
-    setTrainMessage(null);
-    setHasTrained(false);
+    setForecastSeed(0);
+    setModelMessage(null);
     setHasGenerated(false);
-    setSaveMessage(null);
-  };
-
-  const handleSaveModel = async () => {
-    if (!hasGenerated) {
-      setSaveMessage("Please generate a forecast before saving the model.");
-      return;
-    }
-
-    setIsSaving(true);
-    setSaveMessage("Saving model to Firebase...");
-
-    try {
-      const modelData = {
-        // Configuration
-        dataType,
-        country,
-        horizon,
-        horizonYears,
-        lookback,
-        neuronsLayer1,
-        neuronsLayer2,
-        activation,
-        optimizer,
-        
-        // Metrics
-        mae: metrics.mae,
-        rmse: metrics.rmse,
-        mape: metrics.mape,
-        r2: metrics.r2,
-        accuracy: metrics.accuracy,
-        trainingLoss: metrics.trainingLoss,
-        validationLoss: metrics.validationLoss,
-        cagr: metrics.cagr,
-        dataPoints: metrics.dataPoints,
-        
-        // Forecast data
-        forecastPoints: forecastPoints.map(p => ({
-          year: p.year,
-          forecast: p.forecast,
-        })),
-        
-        // Historical data
-        historicalData: historical.map(h => ({
-          year: h.year,
-          historical: h.historical,
-        })),
-        
-        // Testing results
-        testingResults: testingRows,
-        
-        // Metadata
-        trainSeed,
-        savedAt: serverTimestamp(),
-      };
-
-      await addDoc(collection(db, "mlModels"), modelData);
-      setSaveMessage("Model successfully saved to Firebase!");
-      setTimeout(() => setSaveMessage(null), 3000);
-    } catch (error) {
-      console.error("Error saving model to Firebase:", error);
-      setSaveMessage("Failed to save model. Please try again.");
-      setTimeout(() => setSaveMessage(null), 3000);
-    } finally {
-      setIsSaving(false);
-    }
   };
 
   return (
-    <div className="p-6 bg-primary min-h-screen">
-      <div className="max-w-7xl mx-auto">
-        <div className="mb-8 flex items-center gap-3">
-          <AiOutlineFundProjectionScreen className="text-highlights text-3xl" />
-          <div>
-            <h1 className="text-3xl md:text-4xl font-bold text-white">
-              ML Forecast
-            </h1>
-            <p className="text-gray-500">
-              Configure simple ML-style parameters and preview synthetic
-              forecasts to mirror the target layout.
-            </p>
+    <div className="min-h-screen bg-pink-50">
+      <div className="max-w-7xl mx-auto px-6 py-8">
+        <div className="mb-6 rounded-2xl bg-white border border-pink-100 shadow-sm p-6">
+          <div className="flex items-start gap-4">
+            <div className="h-12 w-12 rounded-xl bg-pink-100 flex items-center justify-center">
+              <AiOutlineFundProjectionScreen className="text-pink-700 text-2xl" />
+            </div>
+            <div className="flex-1">
+              <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
+                Forecasting
+              </h1>
+              <p className="text-gray-600 mt-1">
+                Select an age bracket. Forecasting uses the latest trained model
+                saved from the Training page.
+              </p>
+            </div>
           </div>
         </div>
 
-        {/* Configuration */}
-        <div className="bg-secondary border border-gray-700 rounded-lg p-4 mb-6">
-          <h2 className="text-white font-semibold mb-4">Configuration</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm text-gray-500 mb-2">Data Type</label>
-              <select
-                value={dataType}
-                onChange={(e) => setDataType(e.target.value)}
-                className="w-full bg-primary text-white border border-gray-600 rounded-md px-3 py-2"
+        <div className="rounded-2xl bg-white border border-pink-100 shadow-sm p-6 mb-6">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <h2 className="text-lg font-semibold text-gray-900">Controls</h2>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleGenerate}
+                disabled={isLoadingModel || !loadedModel}
+                className={`px-4 py-2 rounded-lg text-white font-medium shadow-sm transition ${
+                  isLoadingModel || !loadedModel
+                    ? "bg-gray-400 cursor-not-allowed"
+                    : "bg-pink-600 hover:bg-pink-700"
+                }`}
               >
-                {DATA_TYPES.map((d) => (
-                  <option key={d} value={d} className="bg-primary text-white">
-                    {d}
+                Generate Forecast
+              </button>
+              <button
+                type="button"
+                onClick={handleReset}
+                className="px-4 py-2 rounded-lg bg-white border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 mt-4">
+            <div className="md:col-span-5">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Age Bracket</label>
+              <select
+                value={ageGroup}
+                onChange={(e) => setAgeGroup(e.target.value)}
+                className="w-full bg-white text-gray-900 border border-gray-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-pink-200"
+              >
+                {ageGroups.map((g) => (
+                  <option key={g} value={g} className="bg-white text-gray-900">
+                    {g}
                   </option>
                 ))}
               </select>
             </div>
-            <div>
-              <label className="block text-sm text-gray-500 mb-2">Country</label>
-              <select
-                value={country}
-                onChange={(e) => setCountry(e.target.value)}
-                className="w-full bg-primary text-white border border-gray-600 rounded-md px-3 py-2"
-              >
-                {COUNTRIES.map((c) => (
-                  <option key={c} value={c} className="bg-primary text-white">
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm text-gray-500 mb-2">
-                Forecast Horizon (Years)
-              </label>
+            <div className="md:col-span-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Forecast Horizon</label>
               <select
                 value={horizon}
                 onChange={(e) => setHorizon(e.target.value)}
-                className="w-full bg-primary text-white border border-gray-600 rounded-md px-3 py-2"
+                className="w-full bg-white text-gray-900 border border-gray-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-pink-200"
               >
                 {HORIZONS.map((h) => (
-                  <option key={h} value={h} className="bg-primary text-white">
+                  <option key={h} value={h} className="bg-white text-gray-900">
                     {h}
                   </option>
                 ))}
               </select>
             </div>
-          </div>
-        </div>
-
-        {/* Hyperparameters */}
-        <div className="bg-secondary border border-gray-700 rounded-lg p-4 mb-6">
-          <h2 className="text-white font-semibold mb-4">Model Hyperparameters</h2>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-            <div>
-              <label className="block text-sm text-gray-500 mb-2">
-                Lookback (Window Size)
-              </label>
-              <input
-                type="number"
-                value={lookback}
-                min={1}
-                max={10}
-                onChange={(e) => setLookback(Number(e.target.value || 1))}
-                className="w-full bg-white text-gray-800 border border-gray-400 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-highlights focus:border-highlights"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-gray-500 mb-2">
-                MLP Neurons (Units)
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="number"
-                  min={1}
-                  value={neuronsLayer1}
-                  onChange={(e) => setNeuronsLayer1(Number(e.target.value || 0))}
-                  className="w-full bg-white text-gray-800 border border-gray-400 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-highlights focus:border-highlights"
-                  placeholder="Layer 1"
-                />
-                <input
-                  type="number"
-                  min={0}
-                  value={neuronsLayer2}
-                  onChange={(e) => setNeuronsLayer2(Number(e.target.value || 0))}
-                  className="w-full bg-white text-gray-800 border border-gray-400 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-highlights focus:border-highlights"
-                  placeholder="Layer 2"
-                />
+            <div className="md:col-span-3">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Latest Model</label>
+              <div
+                className={`w-full rounded-lg px-3 py-2.5 border text-sm font-medium ${
+                  isLoadingModel
+                    ? "bg-gray-50 border-gray-200 text-gray-700"
+                    : loadedModel
+                      ? "bg-green-50 border-green-200 text-green-700"
+                      : "bg-amber-50 border-amber-200 text-amber-700"
+                }`}
+              >
+                {isLoadingModel ? "Loading..." : loadedModel ? "Loaded" : "Not found"}
               </div>
             </div>
-            <div>
-              <label className="block text-sm text-gray-500 mb-2">
-                Activation Function
-              </label>
-              <select
-                value={activation}
-                onChange={(e) => setActivation(e.target.value as Activation)}
-                className="w-full bg-white text-gray-800 border border-gray-400 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-highlights focus:border-highlights"
-              >
-                {ACTIVATIONS.map((a) => (
-                  <option key={a} value={a} className="bg-primary text-white">
-                    {a}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm text-gray-500 mb-2">
-                Optimizer
-              </label>
-              <select
-                value={optimizer}
-                onChange={(e) => setOptimizer(e.target.value)}
-                className="w-full bg-white text-gray-800 border border-gray-400 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-highlights focus:border-highlights"
-              >
-                {ACTIVATIONS.map((a) => (
-                  <option key={a} value={a} className="bg-primary text-white">
-                    {a}
-                  </option>
-                ))}
-              </select>
-            </div>
           </div>
 
-          <div className="flex flex-wrap gap-3 mt-4">
-            <button
-              type="button"
-              onClick={handleTrain}
-              disabled={isTraining}
-              className={`bg-highlights text-white px-4 py-2 rounded-md shadow transition ${
-                isTraining ? "opacity-60 cursor-not-allowed" : "hover:opacity-90"
-              }`}
-            >
-              {isTraining ? "Training..." : "Train Model"}
-            </button>
-            <button
-              type="button"
-              onClick={handleGenerate}
-              disabled={isTraining || !hasTrained}
-              className={`bg-blue-500 text-white px-4 py-2 rounded-md shadow transition ${
-                isTraining || !hasTrained
-                  ? "opacity-60 cursor-not-allowed"
-                  : "hover:opacity-90"
-              }`}
-            >
-              Generate Forecast
-            </button>
-            <button
-              type="button"
-              onClick={handleSaveModel}
-              disabled={isSaving || !hasGenerated}
-              className={`bg-purple-600 text-white px-4 py-2 rounded-md shadow transition ${
-                isSaving || !hasGenerated
-                  ? "opacity-60 cursor-not-allowed"
-                  : "hover:opacity-90"
-              }`}
-            >
-              {isSaving ? "Saving..." : "Save Model to Firebase"}
-            </button>
-            <button
-              type="button"
-              onClick={handleReset}
-              className="bg-red-600 text-white px-4 py-2 rounded-md shadow hover:opacity-90 transition"
-            >
-              Reset
-            </button>
-          </div>
-          {saveMessage && (
-            <p className={`mt-3 text-sm ${
-              saveMessage.includes("successfully") 
-                ? "text-green-400" 
-                : saveMessage.includes("Failed")
-                ? "text-red-400"
-                : "text-gray-700"
-            }`}>
-              {saveMessage}
-            </p>
+          {modelMessage && (
+            <div className="mt-4 rounded-lg bg-pink-50 border border-pink-100 px-4 py-3 text-sm text-pink-800">
+              {modelMessage}
+            </div>
           )}
         </div>
 
-        {hasGenerated ? (
+        {hasGenerated && loadedModel ? (
           <>
             {/* Metrics */}
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
-              <div className="bg-secondary border border-gray-700 rounded-lg p-4">
-                <p className="text-sm text-gray-700">MAE</p>
-                <p className="text-2xl text-pink-700 font-semibold">{metrics.mae}</p>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
+              <div className="lg:col-span-8 rounded-2xl bg-white border border-pink-100 shadow-sm p-6">
+                <div className="flex items-center justify-between gap-4 flex-wrap mb-4">
+                  <div className="flex items-center gap-2">
+                    <AiOutlineLineChart className="text-pink-700 text-xl" />
+                    <h2 className="text-lg font-semibold text-gray-900">
+                      Time Series Forecast
+                    </h2>
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    {ageGroup}
+                  </div>
+                </div>
+                <div className="rounded-xl bg-white" style={{ minHeight: 420 }}>
+                  <ResponsiveContainer width="100%" height={380}>
+                    <LineChart data={mergedSeries} margin={{ top: 20, right: 24, left: 8, bottom: 16 }}>
+                      <CartesianGrid stroke="#f3c4d1" strokeDasharray="4 4" />
+                      <XAxis
+                        dataKey="year"
+                        tick={{ fill: "#6b7280" }}
+                        stroke="#e5e7eb"
+                        tickLine={{ stroke: "#e5e7eb" }}
+                      />
+                      <YAxis
+                        tick={{ fill: "#6b7280" }}
+                        stroke="#e5e7eb"
+                        tickFormatter={(v) => v.toFixed(0)}
+                        label={{
+                          value: "Emigrants",
+                          angle: -90,
+                          position: "insideLeft",
+                          fill: "#6b7280",
+                        }}
+                      />
+                      <Tooltip
+                        content={<ForecastTooltip />}
+                        wrapperStyle={{ outline: "none" }}
+                      />
+                      <Legend />
+                      <Line
+                        type="monotone"
+                        dataKey="historical"
+                        name="Historical"
+                        stroke="#2563eb"
+                        strokeWidth={2.6}
+                        dot={{ r: 3, fill: "#2563eb" }}
+                        connectNulls
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="forecast"
+                        name="Forecast"
+                        stroke="#16a34a"
+                        strokeWidth={2.8}
+                        strokeDasharray="6 4"
+                        dot={{ r: 3, fill: "#16a34a" }}
+                        connectNulls
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
-              <div className="bg-secondary border border-gray-700 rounded-lg p-4">
-                <p className="text-sm text-gray-700">RMSE</p>
-                <p className="text-2xl text-pink-700 font-semibold">{metrics.rmse}</p>
-              </div>
-              <div className="bg-secondary border border-gray-700 rounded-lg p-4">
-                <p className="text-sm text-gray-700">MAPE</p>
-                <p className="text-2xl text-pink-700 font-semibold">{metrics.mape}</p>
-              </div>
-              <div className="bg-secondary border border-gray-700 rounded-lg p-4">
-                <p className="text-sm text-gray-700">R²</p>
-                <p className="text-2xl text-pink-700 font-semibold">{metrics.r2}</p>
-              </div>
-              <div className="bg-secondary border border-gray-700 rounded-lg p-4">
-                <p className="text-sm text-gray-700">Accuracy</p>
-                <p className="text-2xl text-pink-700 font-semibold">{metrics.accuracy}</p>
-              </div>
-            </div>
 
-            {/* Trained model config table (single row) */}
-            <div className="bg-secondary border border-gray-700 rounded-lg p-4 mb-6 text-gray-800">
-              <p className="text-white font-semibold mb-3">Trained Model Configuration</p>
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm text-left">
-                  <thead className="bg-primary text-pink-700 uppercase text-xs">
-                    <tr>
-                      <th className="px-3 py-2 text-left">Lookback</th>
-                      <th className="px-3 py-2 text-left">MLP Neurons (Units)</th>
-                      <th className="px-3 py-2 text-left">Activation</th>
-                      <th className="px-3 py-2 text-left">MAE</th>
-                      <th className="px-3 py-2 text-left">Accuracy</th>
-                    </tr>
-                  </thead>
-                  <tbody className="text-gray-800">
-                    <tr className="border-b border-gray-700">
-                      <td className="px-3 py-2">{lookback}</td>
-                      <td className="px-3 py-2">{metrics.neuronsDisplay}</td>
-                      <td className="px-3 py-2 capitalize">{activation}</td>
-                      <td className="px-3 py-2">{metrics.mae}</td>
-                      <td className="px-3 py-2 text-pink-700 font-semibold">{metrics.accuracy}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
+              <div className="lg:col-span-4 space-y-4">
+                <div className="rounded-2xl bg-white border border-pink-100 shadow-sm p-6">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-4">Model Metrics</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-xl bg-pink-50 border border-pink-100 p-3">
+                      <p className="text-xs text-gray-600">MAE</p>
+                      <p className="text-lg font-semibold text-pink-700">{metrics.mae}</p>
+                    </div>
+                    <div className="rounded-xl bg-pink-50 border border-pink-100 p-3">
+                      <p className="text-xs text-gray-600">RMSE</p>
+                      <p className="text-lg font-semibold text-pink-700">{metrics.rmse}</p>
+                    </div>
+                    <div className="rounded-xl bg-pink-50 border border-pink-100 p-3">
+                      <p className="text-xs text-gray-600">MAPE</p>
+                      <p className="text-lg font-semibold text-pink-700">{metrics.mape}</p>
+                    </div>
+                    <div className="rounded-xl bg-pink-50 border border-pink-100 p-3">
+                      <p className="text-xs text-gray-600">R²</p>
+                      <p className="text-lg font-semibold text-pink-700">{metrics.r2}</p>
+                    </div>
+                    <div className="rounded-xl bg-pink-50 border border-pink-100 p-3 col-span-2">
+                      <p className="text-xs text-gray-600">Accuracy</p>
+                      <p className="text-lg font-semibold text-pink-700">{metrics.accuracy}</p>
+                    </div>
+                  </div>
+                </div>
 
-            {/* Chart */}
-            <div className="bg-secondary border border-gray-700 rounded-lg p-4 mb-6">
-              <div className="flex items-center gap-2 mb-4">
-                <AiOutlineLineChart className="text-highlights text-xl" />
-                <h2 className="text-white font-semibold">
-                  Time Series Forecast - {country}
-                </h2>
-              </div>
-              <div className="bg-primary rounded-md p-4" style={{ minHeight: 400 }}>
-                <ResponsiveContainer width="100%" height={360}>
-                  <LineChart data={mergedSeries} margin={{ top: 20, right: 30, left: 10, bottom: 20 }}>
-                    <CartesianGrid stroke="#374151" strokeDasharray="3 3" />
-                    <XAxis
-                      dataKey="year"
-                      tick={{ fill: "#9ca3af" }}
-                      stroke="#9ca3af"
-                      tickLine={{ stroke: "#9ca3af" }}
-                    />
-                    <YAxis
-                      tick={{ fill: "#9ca3af" }}
-                      stroke="#9ca3af"
-                      tickFormatter={(v) => v.toFixed(1)}
-                      label={{
-                        value: "Emigrants",
-                        angle: -90,
-                        position: "insideLeft",
-                        fill: "#9ca3af",
-                      }}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "#1f2937",
-                        border: "1px solid #374151",
-                        borderRadius: "8px",
-                        color: "#fff",
-                      }}
-                      formatter={(val: any) => (val == null ? "-" : val)}
-                    />
-                    <Legend />
-                    <Line
-                      type="monotone"
-                      dataKey="historical"
-                      name="Historical"
-                      stroke="#60a5fa"
-                      strokeWidth={2.4}
-                      dot={{ r: 4, fill: "#60a5fa" }}
-                      connectNulls
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="forecast"
-                      name="Forecast"
-                      stroke="#22c55e"
-                      strokeWidth={2.6}
-                      strokeDasharray="5 4"
-                      dot={{ r: 4, fill: "#22c55e" }}
-                      connectNulls
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+                <div className="rounded-2xl bg-white border border-pink-100 shadow-sm p-6">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-4">Model Config</h3>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div className="rounded-xl bg-gray-50 border border-gray-100 p-3">
+                      <p className="text-xs text-gray-600">Lookback</p>
+                      <p className="font-semibold text-gray-900">{metrics.lookback ?? "N/A"}</p>
+                    </div>
+                    <div className="rounded-xl bg-gray-50 border border-gray-100 p-3">
+                      <p className="text-xs text-gray-600">Neurons</p>
+                      <p className="font-semibold text-gray-900">{metrics.neuronsDisplay}</p>
+                    </div>
+                    <div className="rounded-xl bg-gray-50 border border-gray-100 p-3">
+                      <p className="text-xs text-gray-600">Activation</p>
+                      <p className="font-semibold text-gray-900">{metrics.activation ?? "N/A"}</p>
+                    </div>
+                    <div className="rounded-xl bg-gray-50 border border-gray-100 p-3">
+                      <p className="text-xs text-gray-600">Optimizer</p>
+                      <p className="font-semibold text-gray-900">{metrics.optimizer ?? "N/A"}</p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
             {/* Testing Results */}
-            <div className="bg-secondary border border-gray-700 rounded-lg p-4 mb-6">
-              <h3 className="text-white font-semibold mb-3">
+            <div className="rounded-2xl bg-white border border-pink-100 shadow-sm p-6 mb-6">
+              <h3 className="text-gray-900 font-semibold mb-4">
                 Testing Results - 20% Split (Actual vs Predicted)
               </h3>
               <div className="overflow-x-auto">
-                <table className="min-w-full text-sm text-left text-gray-800">
-                  <thead className="bg-primary text-pink-700 uppercase text-xs">
+                <table className="min-w-full text-sm text-left text-gray-900">
+                  <thead className="bg-pink-50 text-pink-700 uppercase text-xs">
                     <tr>
                       <th className="px-3 py-2">Year</th>
                       <th className="px-3 py-2">Actual Emigrants</th>
@@ -644,15 +599,15 @@ function MLForecast() {
                       <th className="px-3 py-2">Error</th>
                     </tr>
                   </thead>
-                  <tbody className="text-gray-800">
+                  <tbody className="text-gray-900">
                     {testingRows.map((row) => (
-                      <tr key={row.year} className="border-b border-gray-700">
+                      <tr key={row.year} className="border-b border-gray-100">
                         <td className="px-3 py-2">{row.year}</td>
                         <td className="px-3 py-2">{row.actual.toLocaleString()}</td>
                         <td className="px-3 py-2">{row.predicted.toLocaleString()}</td>
                         <td
                           className={`px-3 py-2 ${
-                            row.error >= 0 ? "text-pink-700" : "text-pink-700"
+                            row.error >= 0 ? "text-green-700" : "text-red-700"
                           }`}
                         >
                           {row.error.toLocaleString()}
@@ -664,10 +619,10 @@ function MLForecast() {
               </div>
             </div>
           </>
-        ) : hasTrained ? (
-          <div className="bg-secondary border border-dashed border-highlights/60 rounded-lg p-6 text-center text-gray-800 mb-6">
+        ) : loadedModel ? (
+          <div className="rounded-2xl bg-white border border-dashed border-pink-200 p-8 text-center text-gray-900 mb-6">
             <p className="text-lg font-semibold text-pink-700 mb-2">Generate to view results</p>
-            <p className="text-sm text-gray-700">
+            <p className="text-sm text-gray-600">
               Click "Generate Forecast" to display charts and metrics.
             </p>
           </div>

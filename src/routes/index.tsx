@@ -302,9 +302,6 @@ function Index() {
           <div className="lg:col-span-2 bg-white rounded-lg p-6 shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-800">Yearly Emigration Trends</h3>
-              <button className="bg-orange-200 text-gray-800 px-4 py-2 rounded-md text-sm hover:bg-orange-300 transition">
-                View Details
-              </button>
             </div>
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={barChartData.length > 0 ? barChartData : []}>

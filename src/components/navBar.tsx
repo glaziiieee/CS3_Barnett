@@ -13,7 +13,6 @@ import {
   AiOutlineMenu,
   AiOutlineClose,
 } from "react-icons/ai";
-import { MdRadar, MdAccountTree } from "react-icons/md";
 import { Link, useLocation } from "@tanstack/react-router";
 import { useNavBar } from "../context/navBarContext";
 
@@ -44,7 +43,12 @@ const navigationItems = [
     path: "/trends",
   },
   {
-    name: "ML Forecast",
+    name: "Training",
+    icon: <AiOutlineFundProjectionScreen className="text-xl" />,
+    path: "/training",
+  },
+  {
+    name: "Forecasting",
     icon: <AiOutlineFundProjectionScreen className="text-xl" />,
     path: "/forecast",
   },
@@ -57,16 +61,6 @@ const navigationItems = [
     name: "Relationships",
     icon: <AiOutlineDotChart className="text-xl" />,
     path: "/relationships",
-  },
-  {
-    name: "Ranking",
-    icon: <MdRadar className="text-xl" />,
-    path: "/radar",
-  },
-  {
-    name: "Flow/Process",
-    icon: <MdAccountTree className="text-xl" />,
-    path: "/parallel",
   },
   {
     name: "Upload Data",
@@ -128,7 +122,7 @@ const NavBar = forwardRef<HTMLElement>((_props, ref) => {
               return (
             <Link
               key={item.name}
-              to={item.path}
+              to={item.path as any}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 mb-1 group ${
                     active
                       ? "bg-pink-100 text-gray-800"
@@ -176,7 +170,7 @@ const NavBar = forwardRef<HTMLElement>((_props, ref) => {
             return (
             <Link
               key={`mobile-${item.name}`}
-              to={item.path}
+              to={item.path as any}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors whitespace-nowrap ${
                   active
                     ? "bg-pink-100 text-gray-800"

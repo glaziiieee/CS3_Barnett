@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as UploadRouteImport } from './routes/upload'
 import { Route as TrendsRouteImport } from './routes/trends'
+import { Route as TrainingRouteImport } from './routes/training'
 import { Route as RelationshipsRouteImport } from './routes/relationships'
 import { Route as RadarRouteImport } from './routes/radar'
 import { Route as ParallelRouteImport } from './routes/parallel'
@@ -30,6 +31,11 @@ const UploadRoute = UploadRouteImport.update({
 const TrendsRoute = TrendsRouteImport.update({
   id: '/trends',
   path: '/trends',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TrainingRoute = TrainingRouteImport.update({
+  id: '/training',
+  path: '/training',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RelationshipsRoute = RelationshipsRouteImport.update({
@@ -94,6 +100,7 @@ export interface FileRoutesByFullPath {
   '/parallel': typeof ParallelRoute
   '/radar': typeof RadarRoute
   '/relationships': typeof RelationshipsRoute
+  '/training': typeof TrainingRoute
   '/trends': typeof TrendsRoute
   '/upload': typeof UploadRoute
 }
@@ -108,6 +115,7 @@ export interface FileRoutesByTo {
   '/parallel': typeof ParallelRoute
   '/radar': typeof RadarRoute
   '/relationships': typeof RelationshipsRoute
+  '/training': typeof TrainingRoute
   '/trends': typeof TrendsRoute
   '/upload': typeof UploadRoute
 }
@@ -123,6 +131,7 @@ export interface FileRoutesById {
   '/parallel': typeof ParallelRoute
   '/radar': typeof RadarRoute
   '/relationships': typeof RelationshipsRoute
+  '/training': typeof TrainingRoute
   '/trends': typeof TrendsRoute
   '/upload': typeof UploadRoute
 }
@@ -139,6 +148,7 @@ export interface FileRouteTypes {
     | '/parallel'
     | '/radar'
     | '/relationships'
+    | '/training'
     | '/trends'
     | '/upload'
   fileRoutesByTo: FileRoutesByTo
@@ -153,6 +163,7 @@ export interface FileRouteTypes {
     | '/parallel'
     | '/radar'
     | '/relationships'
+    | '/training'
     | '/trends'
     | '/upload'
   id:
@@ -167,6 +178,7 @@ export interface FileRouteTypes {
     | '/parallel'
     | '/radar'
     | '/relationships'
+    | '/training'
     | '/trends'
     | '/upload'
   fileRoutesById: FileRoutesById
@@ -182,6 +194,7 @@ export interface RootRouteChildren {
   ParallelRoute: typeof ParallelRoute
   RadarRoute: typeof RadarRoute
   RelationshipsRoute: typeof RelationshipsRoute
+  TrainingRoute: typeof TrainingRoute
   TrendsRoute: typeof TrendsRoute
   UploadRoute: typeof UploadRoute
 }
@@ -200,6 +213,13 @@ declare module '@tanstack/react-router' {
       path: '/trends'
       fullPath: '/trends'
       preLoaderRoute: typeof TrendsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/training': {
+      id: '/training'
+      path: '/training'
+      fullPath: '/training'
+      preLoaderRoute: typeof TrainingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/relationships': {
@@ -286,6 +306,7 @@ const rootRouteChildren: RootRouteChildren = {
   ParallelRoute: ParallelRoute,
   RadarRoute: RadarRoute,
   RelationshipsRoute: RelationshipsRoute,
+  TrainingRoute: TrainingRoute,
   TrendsRoute: TrendsRoute,
   UploadRoute: UploadRoute,
 }
