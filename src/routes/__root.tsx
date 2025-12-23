@@ -3,6 +3,7 @@ import { Outlet, createRootRoute } from "@tanstack/react-router";
 import Header from "../components/header";
 import NavBar from "../components/navBar";
 import { NavBarProvider, useNavBar } from "../context/navBarContext";
+import { YearFilterProvider } from "../context/yearFilterContext";
 
 const RootLayoutContent = () => {
   const headerRef = useRef<HTMLElement>(null);
@@ -41,7 +42,9 @@ export const Route = createRootRoute({
   component: () => {
     return (
       <NavBarProvider>
-        <RootLayout />
+        <YearFilterProvider>
+          <RootLayout />
+        </YearFilterProvider>
       </NavBarProvider>
     );
   },

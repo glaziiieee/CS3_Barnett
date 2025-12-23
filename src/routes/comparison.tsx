@@ -1,15 +1,21 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
 import { ResponsiveBar } from "@nivo/bar";
 import { useComparisonData } from "../hooks/useComparisonData";
+import { useYearFilter } from "../hooks/useYearFilter";
 
 export const Route = createFileRoute("/comparison")({
   component: ComparisonCharts,
 });
 
 function ComparisonCharts() {
-  const [selectedYear, setSelectedYear] = useState<number>(2020);
-  const { data, loading, error, years } = useComparisonData(selectedYear);
+  const { selectedYear, setSelectedYear } = useYearFilter("all");
+  const numericYear = selectedYear === "all" ? undefined : selectedYear;
+  const { data, loading, error, years } = useComparisonData(numericYear);
+
+  const chartData = data.map((d) => ({
+    country: d.country,
+    emigrants: d.emigrants,
+  }));
 
   if (loading) {
     return (
@@ -50,9 +56,16 @@ function ComparisonCharts() {
               </label>
               <select
                 value={selectedYear}
-                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                onChange={(e) =>
+                  setSelectedYear(
+                    e.target.value === "all" ? ("all" as any) : Number(e.target.value)
+                  )
+                }
                 className="w-full p-3 border border-gray-600 rounded-lg bg-primary text-white focus:ring-highlights focus:border-highlights"
               >
+                <option value={"all" as any} className="bg-primary text-white">
+                  All Years
+                </option>
                 {years.map((year) => (
                   <option
                     key={year}
@@ -70,11 +83,11 @@ function ComparisonCharts() {
         {/* Chart */}
         <div className="bg-secondary rounded-lg p-6 border border-gray-700 mb-6">
           <h2 className="text-xl font-semibold text-white mb-4">
-            Top Countries by Emigrants ({selectedYear})
+            Top Countries by Emigrants ({selectedYear === "all" ? "All Years" : selectedYear})
           </h2>
           <div className="h-96 bg-white rounded-lg" style={{ backgroundColor: "#ffffff" }}>
             <ResponsiveBar
-              data={data}
+              data={chartData}
               keys={["emigrants"]}
               indexBy="country"
               margin={{ top: 50, right: 130, bottom: 50, left: 60 }}

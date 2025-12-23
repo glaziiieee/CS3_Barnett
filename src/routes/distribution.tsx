@@ -1,16 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { ResponsiveLine } from "@nivo/line";
 import { useDistributionData } from "../hooks/useDistributionData";
+import { useYearFilter } from "../hooks/useYearFilter";
 
 export const Route = createFileRoute("/distribution")({
   component: DistributionCharts,
 });
 
 function DistributionCharts() {
-  const [selectedYear, setSelectedYear] = useState<number>(2020);
-  const { distributionData, loading, error, years, statistics } =
-    useDistributionData(selectedYear);
+  const { selectedYear } = useYearFilter("all");
+  const numericYear = selectedYear === "all" ? undefined : selectedYear;
+  const { distributionData, loading, error, statistics } =
+    useDistributionData(numericYear);
 
   // Convert country distribution data to density curves
   const countryDensityData = useMemo(() => {

@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import ChoroplethMap from "../components/charts/choroplethMap";
-import PHOriginChoropleth from "../components/charts/originChoropleth";
 import { useDashboardStats } from "../hooks/useDashboardStats";
 import { useComparisonData } from "../hooks/useComparisonData";
 
@@ -11,7 +10,6 @@ export const Route = createFileRoute("/geographic")({
 
 const choroplethComponents = {
   destination: <ChoroplethMap />,
-  origin: <PHOriginChoropleth />,
 };
 
 type ChoroplethKey = keyof typeof choroplethComponents;
@@ -42,7 +40,7 @@ function GeographicVisualization() {
           </h1>
           <p className="text-gray-300 text-lg">
             Interactive choropleth maps showing Filipino emigrant data by
-            destination countries and origin provinces
+            destination countries
           </p>
         </div>
 
@@ -75,16 +73,6 @@ function GeographicVisualization() {
                       : "Origin Provinces"}
                   </option>
                 ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Data Year
-              </label>
-              <select className="w-full p-3 border border-gray-600 rounded-lg bg-primary text-white focus:ring-highlights focus:border-highlights">
-                <option value="2020">2020</option>
-                <option value="2019">2019</option>
-                <option value="2018">2018</option>
               </select>
             </div>
           </div>
@@ -125,9 +113,9 @@ function GeographicVisualization() {
                 </span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-gray-300">Total Emigrants Tracked</span>
+                <span className="text-gray-300">Total Population Tracked</span>
                 <span className="text-white font-semibold">
-                  {stats.isLoading ? "—" : `${stats.totalEmigrants}M`}
+                  {stats.isLoading ? "—" : `${stats.totalPopulation}M`}
                 </span>
               </div>
             </div>

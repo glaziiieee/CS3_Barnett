@@ -1,23 +1,24 @@
 import { useState, useEffect } from "react";
 import { collection, getDocs, query, orderBy } from "firebase/firestore";
 import { db } from "../firebase";
+import type { YearValue } from "./useYearFilter";
 
 interface DashboardStats {
   totalCountries: number;
   totalProvinces: number;
   dataYears: string; // e.g., "1981-2020" or "No data"
-  totalEmigrants: number;
+  totalPopulation: number;
   visualizationTypes: number;
   isLoading: boolean;
   error: string | null;
 }
 
-export const useDashboardStats = (): DashboardStats => {
+export const useDashboardStats = (selectedYear: YearValue = "all"): DashboardStats => {
   const [stats, setStats] = useState<DashboardStats>({
     totalCountries: 0,
     totalProvinces: 0,
     dataYears: "No data",
-    totalEmigrants: 0,
+    totalPopulation: 0,
     visualizationTypes: 7,
     isLoading: true,
     error: null,
@@ -42,10 +43,6 @@ export const useDashboardStats = (): DashboardStats => {
         );
         const provinceSnapshot = await getDocs(provinceQuery);
 
-        // Fetch uploaded CSV files for additional stats
-        const csvQuery = query(collection(db, "uploadedCSVFiles"));
-        const csvSnapshot = await getDocs(csvQuery);
-
         // Process destination data - UPDATED: Handle nested structure
         // Data structure: { Year: 2020, "COUNTRY_NAME": { emigrants: 12345 }, ... }
         const destinationData = destinationSnapshot.docs.map((doc) =>
@@ -53,23 +50,25 @@ export const useDashboardStats = (): DashboardStats => {
         );
         const countries = new Set<string>();
         const years = new Set<number>();
-        let totalEmigrants = 0;
+        let totalPopulation = 0;
 
         destinationData.forEach((data: any) => {
           years.add(data.Year);
+          if (selectedYear !== "all" && data.Year !== selectedYear) return;
+
           Object.entries(data).forEach(([key, value]) => {
             if (key === "Year") return;
 
-            const emigrants =
+            const population =
               typeof value === "object" &&
               value !== null &&
               "emigrants" in value
                 ? (value as { emigrants: number }).emigrants
                 : null;
 
-            if (emigrants && typeof emigrants === "number") {
+            if (population && typeof population === "number") {
               countries.add(key);
-              totalEmigrants += emigrants;
+              totalPopulation += population;
             }
           });
         });
@@ -107,7 +106,7 @@ export const useDashboardStats = (): DashboardStats => {
           totalCountries: countries.size,
           totalProvinces: provinces.size,
           dataYears: yearRange,
-          totalEmigrants: Math.round((totalEmigrants / 1000000) * 100) / 100, // Convert to millions
+          totalPopulation: Math.round((totalPopulation / 1000000) * 100) / 100, // Convert to millions
           visualizationTypes: 7,
           isLoading: false,
           error: null,
@@ -124,7 +123,7 @@ export const useDashboardStats = (): DashboardStats => {
     };
 
     fetchStats();
-  }, []);
+  }, [selectedYear]);
 
   return stats;
 };

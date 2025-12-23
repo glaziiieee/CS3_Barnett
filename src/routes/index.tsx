@@ -2,100 +2,92 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState, useEffect } from "react";
 import {
   AiOutlineGlobal,
-  AiOutlineBarChart,
   AiOutlineLineChart,
   AiOutlineStar,
 } from "react-icons/ai";
 import {
   BarChart,
   Bar,
-  PieChart,
-  Pie,
-  Cell,
-  AreaChart,
-  Area,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
 } from "recharts";
+import { ResponsiveRadar } from "@nivo/radar";
 import { useDashboardStats } from "../hooks/useDashboardStats";
-import { useTrendData } from "../hooks/useTrendData";
-import { useComparisonData } from "../hooks/useComparisonData";
+import { useYearFilter } from "../hooks/useYearFilter";
 import { collection, getDocs, query, orderBy } from "firebase/firestore";
 import { db } from "../firebase";
 
-export const Route = createFileRoute("/")({
-  component: Index,
-});
-
-// Calendar component
-function Calendar() {
-  const today = new Date();
-  const currentMonth = today.getMonth();
-  const currentYear = today.getFullYear();
-  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-  const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay();
-
-  const days = useMemo(() => {
-    const daysArray: (number | null)[] = [];
-    // Add empty cells for days before the first day of the month
-    for (let i = 0; i < firstDayOfMonth; i++) {
-      daysArray.push(null);
-    }
-    // Add days of the month
-    for (let i = 1; i <= daysInMonth; i++) {
-      daysArray.push(i);
-    }
-    return daysArray;
-  }, [firstDayOfMonth, daysInMonth]);
-
-  const weekDays = ["S", "M", "T", "W", "T", "F", "S"];
+function DashboardBarTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ name?: string; value?: number | string; color?: string }>;
+  label?: string | number;
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+  const p = payload[0];
+  const value = typeof p.value === "number" ? p.value : Number(p.value);
+  const formatted = Number.isFinite(value) ? value.toLocaleString() : "N/A";
+  const title = label == null || label === "" ? "Year" : String(label);
 
   return (
-    <div className="bg-white rounded-lg p-4">
-      <div className="grid grid-cols-7 gap-1 text-center">
-        {weekDays.map((day, idx) => (
-          <div key={idx} className="text-xs font-semibold text-gray-600 py-2">
-            {day}
-          </div>
-        ))}
-        {days.map((day, idx) => {
-          const isHighlighted = day === 3 || day === 12 || day === 25;
-          const isBlue = day === 3 || day === 12;
-          const isOrange = day === 25;
-
-          return (
-            <div
-              key={idx}
-              className={`text-sm py-2 ${
-                day === null
-                  ? "text-transparent"
-                  : isHighlighted
-                  ? isBlue
-                    ? "bg-blue-200 text-gray-800 rounded"
-                    : isOrange
-                    ? "bg-orange-200 text-gray-800 rounded"
-                    : "text-gray-800"
-                  : "text-gray-400"
-              }`}
-            >
-              {day}
-            </div>
-          );
-        })}
+    <div
+      className="bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-lg"
+      style={{
+        color: "#000",
+        WebkitTextFillColor: "#000",
+        WebkitTextStroke: "0px",
+        zIndex: 9999,
+        pointerEvents: "none",
+      }}
+    >
+      <div
+        className="text-sm font-bold mb-2"
+        style={{ color: "#000", WebkitTextFillColor: "#000", WebkitTextStroke: "0px" }}
+      >
+        {title}
+      </div>
+      <div className="flex items-center gap-3">
+        <span
+          className="inline-block h-3 w-3 rounded-sm"
+          style={{ background: p.color || "#E5748F" }}
+        />
+        <span
+          className="text-sm"
+          style={{ color: "#000", WebkitTextFillColor: "#000", WebkitTextStroke: "0px" }}
+        >
+          <span
+            className="font-semibold"
+            style={{ color: "#000", WebkitTextFillColor: "#000", WebkitTextStroke: "0px" }}
+          >
+            Population
+          </span>
+          <span
+            className="ml-2 font-semibold"
+            style={{ color: "#000", WebkitTextFillColor: "#000", WebkitTextStroke: "0px" }}
+          >
+            {formatted}
+          </span>
+        </span>
       </div>
     </div>
   );
 }
 
+export const Route = createFileRoute("/")({
+  component: Index,
+});
+
 function Index() {
-  const stats = useDashboardStats();
-  const { countryTrends } = useTrendData();
-  const { data: comparisonData } = useComparisonData();
+  const { selectedYear } = useYearFilter("all");
+  const stats = useDashboardStats(selectedYear);
   const [yearlyData, setYearlyData] = useState<Array<{ year: number; total: number }>>([]);
+  const [radarData, setRadarData] = useState<Array<{ category: string; [key: string]: string | number }>>([]);
 
   // Fetch yearly totals for bar chart
   useEffect(() => {
@@ -130,89 +122,69 @@ function Index() {
           }
         });
         
-        const sortedData = Array.from(yearTotals.entries())
+        const allYears = Array.from(yearTotals.entries())
           .sort(([a], [b]) => a - b)
           .map(([year, total]) => ({ year, total }));
-        
-        setYearlyData(sortedData);
+
+        const filteredYears =
+          selectedYear === "all"
+            ? allYears
+            : allYears.filter((p) => p.year === selectedYear);
+
+        setYearlyData(filteredYears);
+
+        const radarYear =
+          selectedYear === "all" ? allYears[allYears.length - 1]?.year : selectedYear;
+        if (radarYear != null) {
+          const countryTotals: Record<string, number> = {};
+
+          snapshot.docs.forEach((doc) => {
+            const docData = doc.data() as Record<string, unknown>;
+            const year = (docData as any).Year;
+            if (year !== radarYear) return;
+
+            Object.entries(docData).forEach(([key, value]) => {
+              if (key === "Year") return;
+              const emigrants =
+                typeof value === "object" &&
+                value !== null &&
+                "emigrants" in value
+                  ? (value as { emigrants: number }).emigrants
+                  : null;
+              if (emigrants && typeof emigrants === "number" && emigrants > 0) {
+                countryTotals[key] = (countryTotals[key] || 0) + emigrants;
+              }
+            });
+          });
+
+          const topCountries = Object.entries(countryTotals)
+            .sort(([, a], [, b]) => b - a)
+            .slice(0, 5);
+
+          const radarRows = topCountries.map(([country, total]) => ({
+            category: country,
+            Population: total,
+          }));
+
+          setRadarData(radarRows);
+        } else {
+          setRadarData([]);
+        }
       } catch (error) {
         console.error("Error fetching yearly data:", error);
       }
     };
     
     fetchYearlyData();
-  }, []);
+  }, [selectedYear]);
 
-  // Prepare bar chart data (comparing two most recent years)
   const barChartData = useMemo(() => {
-    if (yearlyData.length < 2) return [];
-    const lastTwoYears = yearlyData.slice(-2);
-    const year1 = lastTwoYears[0]?.year;
-    const year2 = lastTwoYears[1]?.year;
-    
-    // Get data for the last 9 years to show trend
-    const recentYears = yearlyData.slice(-9);
-    
-    return recentYears.map((item) => ({
-      year: item.year.toString().slice(-2),
-      [`${year1}`]: item.year === year1 ? item.total : 0,
-      [`${year2}`]: item.year === year2 ? item.total : 0,
+    const data = selectedYear === "all" ? yearlyData.slice(-9) : yearlyData;
+    return data.map((item) => ({
+      year: item.year,
+      population: item.total,
     }));
-  }, [yearlyData]);
-
-  // Prepare donut chart data (top destinations)
-  const donutData = useMemo(() => {
-    const topCountries = comparisonData.slice(0, 5);
-    const total = topCountries.reduce((sum, item) => sum + item.emigrants, 0);
-    const others = comparisonData.slice(5).reduce((sum, item) => sum + item.emigrants, 0);
-    
-    const data = topCountries.map((item) => ({
-      name: item.country,
-      value: Math.round((item.emigrants / (total + others)) * 100),
-      emigrants: item.emigrants,
-    }));
-    
-    if (others > 0) {
-      data.push({
-        name: "Others",
-        value: Math.round((others / (total + others)) * 100),
-        emigrants: others,
-      });
-    }
-    
-    return data;
-  }, [comparisonData]);
-
-  // Pastel color scheme: Pink, Light Blue, Lavender, Mint Green, Peach, Soft Blue
-  const donutColors = ["#F8BBD0", "#A8D5E2", "#E1BEE7", "#B2DFDB", "#FFCCBC", "#B3E5FC"];
-
-  // Prepare area chart data (trends over time)
-  const areaChartData = useMemo(() => {
-    if (countryTrends.length === 0) return [];
-    
-    const topCountry = countryTrends[0];
-    const secondCountry = countryTrends[1] || countryTrends[0];
-    
-    const maxLength = Math.max(topCountry.data.length, secondCountry.data.length);
-    const data: Array<{ year: string; value1: number; value2: number }> = [];
-    
-    for (let i = 0; i < maxLength; i++) {
-      const year1 = topCountry.data[i]?.x || "";
-      const year2 = secondCountry.data[i]?.x || "";
-      const value1 = topCountry.data[i]?.y || 0;
-      const value2 = secondCountry.data[i]?.y || 0;
-      
-      if (year1) {
-        data.push({
-          year: year1.slice(-2),
-          value1,
-          value2,
-        });
-      }
-    }
-    
-    return data.slice(-9);
-  }, [countryTrends]);
+  }, [yearlyData, selectedYear]);
 
   // Calculate metrics
   const recentYearTotal = useMemo(() => {
@@ -252,12 +224,12 @@ function Index() {
           {/* Total Emigrants Card - Pastel Blue */}
           <div className="bg-blue-200 rounded-lg p-6 text-gray-800">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-medium">Total Emigrants</h3>
+              <h3 className="text-sm font-medium">Total Population</h3>
               <div className="bg-blue-100 rounded-full p-2">
                 <AiOutlineGlobal className="text-xl text-blue-600" />
               </div>
             </div>
-            <p className="text-3xl font-bold">{stats.totalEmigrants}M</p>
+            <p className="text-3xl font-bold">{stats.totalPopulation}M</p>
           </div>
 
           {/* Total Countries Card - White */}
@@ -301,31 +273,15 @@ function Index() {
           {/* Bar Chart - Takes 2 columns */}
           <div className="lg:col-span-2 bg-white rounded-lg p-6 shadow-sm">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-800">Yearly Emigration Trends</h3>
+              <h3 className="text-lg font-semibold text-gray-800">Yearly Population Trends</h3>
             </div>
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={barChartData.length > 0 ? barChartData : []}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                 <XAxis dataKey="year" stroke="#6b7280" />
                 <YAxis stroke="#6b7280" tickFormatter={(value) => `${(value / 1000000).toFixed(1)}M`} />
-                <Tooltip 
-                  formatter={(value: number) => `${(value / 1000000).toFixed(2)}M`}
-                />
-                <Legend />
-                {yearlyData.length >= 2 && (
-                  <>
-                    <Bar 
-                      dataKey={`${yearlyData[yearlyData.length - 2]?.year}`}
-                      fill="#FFCCBC" 
-                      name={`${yearlyData[yearlyData.length - 2]?.year}`}
-                    />
-                    <Bar 
-                      dataKey={`${yearlyData[yearlyData.length - 1]?.year}`}
-                      fill="#B3E5FC" 
-                      name={`${yearlyData[yearlyData.length - 1]?.year}`}
-                    />
-                  </>
-                )}
+                <Tooltip content={<DashboardBarTooltip />} wrapperStyle={{ outline: "none" }} />
+                <Bar dataKey="population" fill="#E5748F" name="Population" />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -333,97 +289,48 @@ function Index() {
           {/* Donut Chart - Takes 1 column */}
           <div className="bg-white rounded-lg p-6 shadow-sm">
             <h3 className="text-lg font-semibold text-gray-800 mb-4">Top Destinations</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={donutData.length > 0 ? donutData : [{ name: "No Data", value: 100 }]}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={80}
-                  outerRadius={120}
-                  paddingAngle={2}
-                  dataKey="value"
-                  stroke="#ffffff"
-                  strokeWidth={2}
-                >
-                  {donutData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={donutColors[index % donutColors.length]} />
-                  ))}
-                </Pie>
-                <Tooltip 
-                  formatter={(value: number) => `${value}%`}
-                  contentStyle={{
-                    backgroundColor: "#fff",
-                    border: "1px solid #e5e7eb",
-                    borderRadius: "8px",
+            <div style={{ height: 300 }}>
+              {radarData.length > 0 ? (
+                <ResponsiveRadar
+                  data={radarData}
+                  keys={["Population"]}
+                  indexBy="category"
+                  valueFormat=">-.0f"
+                  margin={{ top: 40, right: 60, bottom: 40, left: 60 }}
+                  borderColor={{ from: "color" }}
+                  gridLabelOffset={24}
+                  dotSize={8}
+                  dotColor={{ theme: "background" }}
+                  dotBorderWidth={2}
+                  colors={{ scheme: "nivo" }}
+                  blendMode="multiply"
+                  motionConfig="wobbly"
+                  theme={{
+                    axis: {
+                      domain: { line: { stroke: "#e5e7eb", strokeWidth: 1 } },
+                      ticks: {
+                        line: { stroke: "#e5e7eb", strokeWidth: 1 },
+                        text: { fill: "#6b7280", fontSize: 11 },
+                      },
+                      legend: { text: { fill: "#374151", fontSize: 12 } },
+                    },
+                    grid: {
+                      line: { stroke: "#e5e7eb", strokeWidth: 1 },
+                    },
+                    legends: {
+                      text: { fill: "#374151" },
+                    },
                   }}
                 />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="text-center mt-4">
-              <p className="text-2xl font-bold text-gray-900">
-                {donutData.length > 0 ? `${donutData[0].value}%` : "N/A"}
-              </p>
-              <p className="text-sm text-gray-500 mt-2">
-                {donutData.length > 0 ? donutData[0].name : "No data available"}
-              </p>
+              ) : (
+                <div className="h-full flex items-center justify-center text-sm text-gray-500">
+                  No data available
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Bottom Row: Area Chart and Calendar */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Area Chart - Takes 2 columns */}
-          <div className="lg:col-span-2 bg-white rounded-lg p-6 shadow-sm">
-            <div className="flex items-center gap-4 mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-orange-200"></div>
-                <span className="text-sm text-gray-700">
-                  {countryTrends[0]?.id || "Top Destination"}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-blue-200"></div>
-                <span className="text-sm text-gray-700">
-                  {countryTrends[1]?.id || "Second Destination"}
-                </span>
-              </div>
-            </div>
-            <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={areaChartData.length > 0 ? areaChartData : []}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis dataKey="year" stroke="#6b7280" />
-                <YAxis stroke="#6b7280" tickFormatter={(value) => `${(value / 1000).toFixed(0)}K`} />
-                <Tooltip 
-                  formatter={(value: number) => `${value.toLocaleString()}`}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="value1"
-                  stackId="1"
-                  stroke="#FFCCBC"
-                  fill="#FFCCBC"
-                  fillOpacity={0.6}
-                  name={countryTrends[0]?.id || "Top"}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="value2"
-                  stackId="1"
-                  stroke="#B3E5FC"
-                  fill="#B3E5FC"
-                  fillOpacity={0.6}
-                  name={countryTrends[1]?.id || "Second"}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Calendar - Takes 1 column */}
-          <div className="bg-white rounded-lg p-6 shadow-sm">
-            <Calendar />
-          </div>
-        </div>
       </div>
     </div>
   );

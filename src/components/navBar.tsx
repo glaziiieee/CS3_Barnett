@@ -43,11 +43,6 @@ const navigationItems = [
     path: "/trends",
   },
   {
-    name: "Training",
-    icon: <AiOutlineFundProjectionScreen className="text-xl" />,
-    path: "/training",
-  },
-  {
     name: "Forecasting",
     icon: <AiOutlineFundProjectionScreen className="text-xl" />,
     path: "/forecast",

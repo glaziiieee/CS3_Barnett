@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 import { ResponsivePie } from "@nivo/pie";
 import { useCompositionData } from "../hooks/useCompositionData";
+import { useYearFilter } from "../hooks/useYearFilter";
 
 // Pastel color scheme: Pink, Light Blue, Lavender, Mint Green, Peach, Soft Blue
 const donutColorScheme = ["#F8BBD0", "#A8D5E2", "#E1BEE7", "#B2DFDB", "#FFCCBC", "#B3E5FC"];
@@ -11,7 +12,8 @@ export const Route = createFileRoute("/composition")({
 });
 
 function CompositionCharts() {
-  const [selectedYear, setSelectedYear] = useState<number>(1981);
+  const { selectedYear, setSelectedYear } = useYearFilter("all");
+  const numericYear = selectedYear === "all" ? undefined : selectedYear;
   const {
     destinationData,
     ageGroupData,
@@ -19,7 +21,7 @@ function CompositionCharts() {
     loading,
     error,
     years,
-  } = useCompositionData(selectedYear);
+  } = useCompositionData(numericYear);
 
   // Apply color scheme to all chart data
   const destinationDataWithColors = useMemo(() => {
@@ -75,9 +77,16 @@ function CompositionCharts() {
               </label>
               <select
                 value={selectedYear}
-                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                onChange={(e) =>
+                  setSelectedYear(
+                    e.target.value === "all" ? ("all" as any) : Number(e.target.value)
+                  )
+                }
                 className="w-full p-3 border border-gray-600 rounded-lg bg-primary text-white focus:ring-highlights focus:border-highlights"
               >
+                <option value={"all" as any} className="bg-primary text-white">
+                  All Years
+                </option>
                 {years.map((year) => (
                   <option
                     key={year}
@@ -97,7 +106,7 @@ function CompositionCharts() {
           {/* Destination Countries Pie Chart */}
           <div className="bg-secondary rounded-lg p-6 border border-gray-700">
             <h2 className="text-xl font-semibold text-white mb-4">
-              Destination Countries Distribution ({selectedYear})
+              Destination Countries Distribution ({selectedYear === "all" ? "All Years" : selectedYear})
             </h2>
             <div className="h-80 bg-white rounded-md p-4">
               <ResponsivePie
@@ -144,7 +153,7 @@ function CompositionCharts() {
           {/* Age Groups Pie Chart */}
           <div className="bg-secondary rounded-lg p-6 border border-gray-700">
             <h2 className="text-xl font-semibold text-white mb-4">
-              Age Groups Distribution ({selectedYear})
+              Age Groups Distribution ({selectedYear === "all" ? "All Years" : selectedYear})
             </h2>
             <div className="h-80 bg-white rounded-md p-4">
               <ResponsivePie
